@@ -6,7 +6,8 @@ visible. If you think you can manage with that, you are most welcome to use it,
 as per the copyrights mentioned in the headers. Do let me know if you find this
 useful.
 
-To compile and link, you would need liboauth from
-http://liboauth.sourceforge.net/
+To compile and link, you would need:
+1. liboauth from http://liboauth.sourceforge.net/
+2. expat (and expat-devel) http://expat.sourceforge.net/
 
 Do report bugs to arnob.nandi@gmail.com
