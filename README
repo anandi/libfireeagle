@@ -1,0 +1,12 @@
+This is the open-source C++ API library for Yahoo! Fire Eagle
+(http://fireeagle.yahoo.net)
+
+Right now, this is pretty much a work in progress, so only the sources are
+visible. If you think you can manage with that, you are most welcome to use it,
+as per the copyrights mentioned in the headers. Do let me know if you find this
+useful.
+
+To compile and link, you would need liboauth from
+http://liboauth.sourceforge.net/
+
+Do report bugs to arnob.nandi@gmail.com
