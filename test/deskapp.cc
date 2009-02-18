@@ -9,8 +9,8 @@
 #include <string.h>
 #include "fireeagle.h"
 
-#define CONSUMER_KEY "UkaPZ38Hehbi"
-#define CONSUMER_SECRET "qAvHI2KEM4EsbkNf5rYrDxq0CNdLaCjq"
+#define CONSUMER_KEY "" //Your app's consumer key here.
+#define CONSUMER_SECRET "" //Your app's consumer secret here.
 
 void usage() {
     cout << "Arguments:" << endl;
