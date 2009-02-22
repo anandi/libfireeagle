@@ -74,6 +74,9 @@ class OAuthTokenPair {
 
     OAuthTokenPair(const string &_token, const string &_secret);
     OAuthTokenPair(const OAuthTokenPair &other);
+    OAuthTokenPair(const string &file);
+
+    void save(const string &file) const;
 };
 
 //extern const OAuthTokenPair empty_token;
@@ -150,7 +153,7 @@ class FireEagle {
     string getAuthorizeURL(const OAuthTokenPair &oauth) const;
     string authorize(const OAuthTokenPair &oauth) const; //Aliased to getAuthorizeURL
 
-    //Costructors, destructors and paraphanelia
+    //Constructors, destructors and paraphanelia
     FireEagle(const string &_consumerKey, const string &_consumerSecret,
               const string &_oAuthToken = "", const string &_oAuthTokenSecret = "");
     ~FireEagle();

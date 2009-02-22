@@ -50,6 +50,59 @@ OAuthTokenPair::OAuthTokenPair(const OAuthTokenPair &other) {
     secret = other.secret;
 }
 
+OAuthTokenPair::OAuthTokenPair(const string &file) {
+    FILE *fp; //Someone please patch my code with ifstreams :( ... I am so lazy to
+              //break the C mould.
+    char buffer[1024];
+
+    fp = fopen(file.c_str(), "r");
+
+    if (!fp) {
+        ostringstream os;
+        os << "Could not open token file (" << file << ")";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+    }
+    fgets(buffer, 1023, fp);
+    fclose(fp);
+
+    char *pos = &(buffer[strlen(buffer) - 1]); //Last char may be '\n'
+    if (*pos == '\n')
+        *pos = 0;
+    pos = strchr(buffer, ' '); //Search for the separator whitespace.
+    if (!pos) {
+        ostringstream os;
+        os << "Token file: " << file << " . Invalid format.";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+    }
+
+    *pos = 0; pos++;
+    if (!strlen(buffer) || !strlen(pos)) {
+        ostringstream os;
+        os << "Token file: " << file << " . Invalid format.";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+    }
+
+    token.append(buffer);
+    secret.append(pos);
+}
+
+void OAuthTokenPair::save(const string &file) const {
+    if (!token.length() || !secret.length()) {
+        throw new FireEagleException("Cannot save an empty OAuthTokenPair.",
+                                     FE_INTERNAL_ERROR);
+    }
+
+    FILE *fp = fopen(file.c_str(), "w");
+    if (!fp) {
+        ostringstream os;
+        os << "Could not open token file (" << file << ") for saving.";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+    }
+
+    fprintf(fp, "%s %s\n", token.c_str(), secret.c_str());
+    fclose(fp);
+}
+
 const FE_ParamPairs empty_params;
 
 extern "C" size_t

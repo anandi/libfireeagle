@@ -9,5 +9,6 @@ useful.
 To compile and link, you would need:
 1. liboauth from http://liboauth.sourceforge.net/
 2. expat (and expat-devel) http://expat.sourceforge.net/
+3. curl (and curl-devel) http://curl.haxx.se/
 
 Do report bugs to arnob.nandi@gmail.com
