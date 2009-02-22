@@ -527,20 +527,8 @@ string FireEagle::within(const FE_ParamPairs &args, enum FE_format format) const
 
 
 
-string FireEagle::recent(const string &since, unsigned int per_page,
-                         unsigned int page, enum FE_format format) const {
-    FE_ParamPairs args;
-
-    args["time"] = since;
-
-    ostringstream os;
-    os << per_page;
-    args["per_page"] = os.str();
-
-    ostringstream os1;
-    os1 << page;
-    args["page"] = os1.str();
-
+string FireEagle::recent(const FE_ParamPairs &args, enum FE_format format) const {
+    //You can call without any args...
     return call("recent", args, false, format);
 }
 

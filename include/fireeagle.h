@@ -146,8 +146,7 @@ class FireEagle {
 
     //Use the following API calls only in case of a Web application.
     string within(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
-    string recent(const string &since, unsigned int per_page, unsigned int page,
-                  enum FE_format format = FE_FORMAT_XML) const;
+    string recent(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
 
     //Less useful methods...
     string getAuthorizeURL(const OAuthTokenPair &oauth) const;

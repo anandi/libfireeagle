@@ -26,6 +26,8 @@ void usage() {
     cout << "\t--get_location Needs an access token" << endl;
     cout << "\t--lookup Needs an access token <name>=<value> [<name>=<value>,[...]]" << endl;
     cout << "\t--update Needs an access token <name>=<value> [<name>=<value>,[...]]" << endl;
+    cout << "\t--within Needs a general token <name>=<value> [<name>=<value>,[...]]" << endl;
+    cout << "\t--recent Needs a general token <name>=<value> [<name>=<value>,[...]]" << endl;
 }
 
 OAuthTokenPair request_token(FireEagle &fe) {
@@ -122,6 +124,39 @@ string update(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
     return response;
 }
 
+string within(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
+    string response;
+    if (format == "json") {
+        response = fe.within(args, FE_FORMAT_JSON);
+    } else if ((format == "xml") || (format == "")) {
+        response = fe.within(args);
+    } else {
+        cout << "Invalid format specified. Reverting to default XML..." << endl;
+        response = fe.within(args);
+    }
+
+    cout << "Within response: " << response << endl;
+
+    return response;
+}
+
+string recent(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
+    string response;
+
+    if (format == "json") {
+        response = fe.recent(args, FE_FORMAT_JSON);
+    } else if ((format == "xml") || (format == "")) {
+        response = fe.recent(args);
+    } else {
+        cout << "Invalid format specified. Reverting to default XML..." << endl;
+        response = fe.recent(args);
+    }
+
+    cout << "Recent response: " << response << endl;
+
+    return response;
+}
+
 OAuthTokenPair get_token(const string &file, const string &tok_str, const string &secret_str) {
     //First check whether the token & secret has been passed along with the command arg...
     //Even otherwise, use empty strings if file is not specified. Don't throw exceptions.
@@ -135,7 +170,6 @@ OAuthTokenPair get_token(const string &file, const string &tok_str, const string
 FE_ParamPairs get_args(int idx, int argc, char *argv[]) {
     //Parse the arguments...
     FE_ParamPairs args;
-    int argcount = 0;
 
     for (int i = idx + 1 ; (i < argc) && (strncmp(argv[i], "--", 2) != 0) ; i++) {
         char *c = strchr(argv[i], '=');
@@ -154,11 +188,7 @@ FE_ParamPairs get_args(int idx, int argc, char *argv[]) {
         }
 
         args[argv[i]] = c;
-        argcount++;
     }
-
-    if (argcount == 0)
-        cerr << "Please provide some arguments in the <name>=<value> form" << endl;
 
     return args;
 }
@@ -284,8 +314,10 @@ int main(int argc, char *argv[]) {
             FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
-            if (args.size() == 0)
+            if (args.size() == 0) {
+                cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
+            }
             lookup(fe, args, (json) ? "json" : "");
         } else if (strcmp(argv[idx], "--update") == 0) {
             if (oauth_tok.token.length() == 0) {
@@ -295,9 +327,33 @@ int main(int argc, char *argv[]) {
             FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
-            if (args.size() == 0)
+            if (args.size() == 0) {
+                cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
+            }
             update(fe, args, (json) ? "json" : "");
+        } else if (strcmp(argv[idx], "--within") == 0) {
+            if (oauth_tok.token.length() == 0) {
+                cout << "You must provide the general token and secret." << endl;
+                return 0;
+            }
+            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+
+            FE_ParamPairs args = get_args(idx, argc, argv);
+            if (args.size() == 0) {
+                cerr << "Please provide some arguments in the <name>=<value> form" << endl;
+                return 0;
+            }
+            within(fe, args, (json) ? "json" : "");
+        } else if (strcmp(argv[idx], "--recent") == 0) {
+            if (oauth_tok.token.length() == 0) {
+                cout << "You must provide the general token and secret." << endl;
+                return 0;
+            }
+            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+
+            FE_ParamPairs args = get_args(idx, argc, argv);
+            recent(fe, args, (json) ? "json" : "");
         } else {
             usage();
         }
