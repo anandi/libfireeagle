@@ -18,6 +18,9 @@ void usage() {
     cout << "\t--token <token> <secret> Optional. Alternative is --token-file" << endl;
     cout << "\t--out-token <file> Optional. Use with commands that generate request or access tokens to save to file." << endl;
     cout << "\t--json Optional with some commands. Returns the data for the API calls as JSON." << endl;
+    cout << "\t--fe-root <base URL> Point to the Fire Eagle installation [" << FireEagle::FE_ROOT << "]" << endl;
+    cout << "\t--debug Enable verbose output" << endl;
+    cout << "\t--https-noverify Disable HTTPS peer verification" << endl;
     cout << "\nOAuth Commands: (use --token or --token-file where tokens are needed)" << endl;
     cout << "\t--get_request_tok" << endl;
     cout << "\t--get_authorize_url You can optionally specify a request token." << endl;
@@ -194,9 +197,6 @@ FE_ParamPairs get_args(int idx, int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
-//    FireEagle::FE_DUMP_REQUESTS = true;
-//    FireEagle::FE_DEBUG = true;
-
     if (argc == 1) {
         usage();
         return 0;
@@ -243,8 +243,23 @@ int main(int argc, char *argv[]) {
             }
             save_file.append(argv[i + 1]);
             i += 2;
+        } else if (strcmp(argv[i], "--fe-root") == 0) {
+            if (i == (argc - 1)) {
+                cerr << "Option --out-token must be followed by a filename." << endl;
+                return 0;
+            }
+            FireEagle::FE_ROOT = string(argv[i + 1]);
+            FireEagle::FE_API_ROOT = string(argv[i + 1]);
+            i += 2;
         } else if (strcmp(argv[i], "--json") == 0) {
             json = true;
+            i++;
+        } else if (strcmp(argv[i], "--debug") == 0) {
+            FireEagle::FE_DUMP_REQUESTS = true;
+            FireEagle::FE_DEBUG = true;
+            i++;
+        } else if (strcmp(argv[i], "--https-noverify") == 0) {
+            FireEagle::FE_VERIFY_PEER = false;
             i++;
         } else if ((idx == -1) && (strncmp(argv[i], "--", 2) == 0)) {
             idx = i;
