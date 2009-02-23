@@ -119,6 +119,7 @@ string FireEagle::FE_ROOT("http://fireeagle.yahoo.net");
 string FireEagle::FE_API_ROOT("https://fireeagle.yahooapis.com");
 bool FireEagle::FE_DEBUG = false;
 bool FireEagle::FE_DUMP_REQUESTS = false;
+bool FireEagle::FE_VERIFY_PEER = true;
 
 // Make an HTTP request, throwing an exception if we get anything other than a 200 response
 string FireEagle::http(const string &url, const string postData) const {
@@ -143,6 +144,10 @@ string FireEagle::http(const string &url, const string postData) const {
     string response;
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_response_chunk_handler);
+    if (!FireEagle::FE_VERIFY_PEER) {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+    }
     if (postData.length()) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());

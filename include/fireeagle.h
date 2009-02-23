@@ -121,6 +121,8 @@ class FireEagle {
     static string FE_API_ROOT;
     static bool FE_DEBUG; // set to true to print out debugging info
     static bool FE_DUMP_REQUESTS; // set to a pathname to dump out http requests to a log
+    //Dangerous thing to do... Do not use this as false in production!!
+    static bool FE_VERIFY_PEER;
 
     // OAuth URLs
     string requestTokenURL() const;
