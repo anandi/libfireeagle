@@ -1,27 +1,35 @@
-/**
- * FireEagle OAuth+API C++ bindings
- *
- * Copyright (C) 2009 Yahoo! Inc
- *
- */
+#ifndef FIRE_OBJECTS_H
+#define FIRE_OBJECTS_H
+
+#include <string>
+#include <list>
+
+using namespace std;
 
 //Structure for location.
-enum FE_geometry_type {FEGeo_POINT = 0, FEGeo_BOX, FEGeo_POLYGON };
+enum FE_geometry_type {FEGeo_INVALID = 0, FEGeo_POINT, FEGeo_BOX, FEGeo_POLYGON };
+
 class FE_geometry {
   public:
     enum FE_geometry_type type;
     double latitude; //Center of the bounding box in case of an area.
     double longitude; //Center of the bounding box in case of an area.
+
+    virtual void print(ostream &os, unsigned int indent = 0) const;
 };
 
-class FEGeo_Point extends FE_geometry {};
+class FEGeo_Point : public FE_geometry {
+    virtual void print(ostream &os, unsigned int indent = 0) const;
+};
 
-class FEGeo_Box extends FE_geometry {
+class FEGeo_Box : public FE_geometry {
   public:
     double min_lat;
     double min_lon;
     double max_lat;
     double max_lon;
+
+    virtual void print(ostream &os, unsigned int indent = 0) const;
 };
 
 class FE_location {
@@ -38,6 +46,8 @@ class FE_location {
     bool is_place_id_exact;
     unsigned int woeid;
     bool is_woeid_exact;
+
+    virtual void print(ostream &os, unsigned int indent = 0) const;
 };
 
 class FE_user {
@@ -49,5 +59,8 @@ class FE_user {
     string timezone;
     string woeid_hierarchy;
     list<FE_location> location;    
+
+    virtual void print(ostream &os, unsigned int indent = 0) const;
 };
 
+#endif //FIRE_OBJECTS_H
