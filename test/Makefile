@@ -9,6 +9,7 @@ LIBDIRS := -L../src -L$(LIBOAUTHDIR)/trunk/src
 LIBS := -loauth -lfireeagle -lcurl -lexpat
 SRC_CC := ./deskapp.cc
 OBJS := $(SRC_CC:.cc=.o)
+DEPS := $(SRC_CC:.cc=.d)
 CPP := g++
 CPPFLAGS := -g -c $(INCLUDE_DIRS)
 LD := g++
@@ -24,5 +25,10 @@ $(TARGET): $(OBJS)
 %.o: %.cc
 	$(CPP) $(CPPFLAGS) -o $@ $<
 
+%.d: %.cc
+	$(CPP) -o $@ -MM $(INCLUDE_DIRS) $<
+
+include $(DEPS)
+
 clean:
-	$(RM) $(OBJS) $(TARGET)
+	$(RM) $(OBJS) $(TARGET) $(DEPS)

@@ -7,6 +7,7 @@ LIBOAUTHDIR := $(HOME)/scratch/liboauth
 INCLUDE_DIRS := -I. -I../include -I$(LIBOAUTHDIR)/trunk/src
 SRC_CC := ./fireeagle.cc ./fire_objects.cc ./fire_parser.cc
 OBJS := $(SRC_CC:.cc=.o)
+DEPS := $(SRC_CC:.cc=.d)
 CPP := g++
 CPPFLAGS := -fPIC -g -c $(INCLUDE_DIRS)
 LD := g++
@@ -22,5 +23,10 @@ $(TARGET): $(OBJS)
 %.o: %.cc
 	$(CPP) $(CPPFLAGS) -o $@ $<
 
+%.d: %.cc
+	$(CPP) -o $@ -MM $(INCLUDE_DIRS) $<
+
+include $(DEPS)
+
 clean:
-	$(RM) $(OBJS) $(TARGET)
+	$(RM) $(OBJS) $(TARGET) $(DEPS)
