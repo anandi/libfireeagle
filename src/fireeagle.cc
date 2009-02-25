@@ -205,19 +205,11 @@ string FireEagle::oAuthRequest(const string &url, const FE_ParamPairs &args, boo
         bool first_time = true;
         for (FE_ParamPairs::const_iterator iter = args.begin() ;
              iter != args.end() ; iter++) {
-            char *name = oauth_url_escape(iter->first.c_str());
-            char *value = oauth_url_escape(iter->second.c_str());
-            if (!(name && value))
-                throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
             if (!first_time)
                 url_with_params.append("&");
             else
                 first_time = false;
-            url_with_params.append(name);
-            url_with_params.append("=");
-            url_with_params.append(value);
-            free(name);
-            free(value);
+            url_with_params.append(iter->first + "=" + iter->second);
         }
     }
 
