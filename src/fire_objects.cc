@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include <stdlib.h>
+#include <limits.h>
 
 #include "fire_objects.h"
 #include "fire_parser.h"
@@ -19,6 +20,12 @@ static void do_indent(ostream &os, unsigned int indent) {
         os << "    ";
 }
 
+FE_geometry::FE_geometry(FE_geometry_type _type) {
+    type = _type;
+    latitude = 0;
+    longitude = 0;
+}
+
 void FE_geometry::print(ostream &os, unsigned int indent) const {
     if (type == FEGeo_INVALID)
         return;
@@ -26,9 +33,18 @@ void FE_geometry::print(ostream &os, unsigned int indent) const {
     do_indent(os, indent); os << "Longitude: " << longitude << endl;
 }
 
+FEGeo_Point::FEGeo_Point() : FE_geometry(FEGeo_POINT) {}
+
 void FEGeo_Point::print(ostream &os, unsigned int indent) const {
     do_indent(os, indent); os << "Object: " << "Location point" << endl;
     ((FE_geometry *)this)->print(os, indent);
+}
+
+FEGeo_Box::FEGeo_Box() : FE_geometry(FEGeo_BOX) {
+    min_lat = 0;
+    min_lon = 0;
+    max_lat = 0;
+    max_lon = 0;
 }
 
 void FEGeo_Box::print(ostream &os, unsigned int indent) const {
@@ -40,6 +56,14 @@ void FEGeo_Box::print(ostream &os, unsigned int indent) const {
     do_indent(os, indent); os << "Longitude (max): " << max_lon << endl;
 }
 
+FE_location::FE_location() {
+    best_guess = false;
+    level = UINT_MAX;
+    is_place_id_exact = false;
+    woeid = UINT_MAX;
+    is_woeid_exact = false;
+}
+
 void FE_location::print(ostream &os, unsigned int indent) const {
     do_indent(os, indent); os << "Object: " << "Location data" << endl;
     geometry.print(os, indent + 1);
@@ -48,24 +72,39 @@ void FE_location::print(ostream &os, unsigned int indent) const {
     } else {
         do_indent(os, indent); os << "Best guess: FALSE" << endl;
     }
-    do_indent(os, indent); os << "Label: " << label << endl;
-    do_indent(os, indent); os << "Level: " << level << endl;
-    do_indent(os, indent); os << "Level name: " << level_name << endl;
-    do_indent(os, indent); os << "Timestamp: " << timestamp << endl;
+    if (label.length() > 0) {
+        do_indent(os, indent); os << "Label: " << label << endl;
+    }
+    if (level != UINT_MAX) {
+        do_indent(os, indent); os << "Level: " << level << endl;
+        do_indent(os, indent); os << "Level name: " << level_name << endl;
+    }
+    if (timestamp.length() > 0) {
+        do_indent(os, indent); os << "Timestamp: " << timestamp << endl;
+    }
     do_indent(os, indent); os << "Location name: " << full_location << endl;
     do_indent(os, indent); os << "Normal name: " << place_name << endl;
-    do_indent(os, indent); os << "Place id: " << place_id << endl;
+    if (place_name.length() > 0) {
+        do_indent(os, indent); os << "Place id: " << place_id << endl;
+    }
     if (is_place_id_exact) {
         do_indent(os, indent); os << "Place ID is exact: TRUE" << endl;
     } else {
         do_indent(os, indent); os << "Place ID is exact: FALSE" << endl;
     }
-    do_indent(os, indent); os << "WOEID: " << woeid << endl;
+    if (woeid != UINT_MAX) {
+        do_indent(os, indent); os << "WOEID: " << woeid << endl;
+    }
     if (is_woeid_exact) {
         do_indent(os, indent); os << "WOEID is exact: TRUE" << endl;
     } else {
         do_indent(os, indent); os << "WOEID is exact: FALSE" << endl;
     }
+}
+
+FE_user::FE_user() {
+    can_read = false;
+    can_write = false;
 }
 
 void FE_user::print(ostream &os, unsigned int indent) const {
@@ -81,9 +120,16 @@ void FE_user::print(ostream &os, unsigned int indent) const {
         do_indent(os, indent); os << "Can write: FALSE" << endl;
     }
     do_indent(os, indent); os << "OAuth token: " << token << endl;
-    do_indent(os, indent); os << "Update timestamp: " << last_update_timestamp << endl;
-    do_indent(os, indent); os << "Timezone: " << timezone << endl;
-    do_indent(os, indent); os << "Location hierarchy: " << woeid_hierarchy << endl;
+    if (last_update_timestamp.length() > 0) {
+        do_indent(os, indent); os << "Update timestamp: " << last_update_timestamp << endl;
+    }
+    if (timezone.length() > 0) {
+        do_indent(os, indent); os << "Timezone: " << timezone << endl;
+    }
+    if (woeid_hierarchy.length() > 0) {
+        do_indent(os, indent); os << "Location hierarchy: " << woeid_hierarchy << endl;
+    }
+
     list<FE_location>::const_iterator iter;
     for (iter = location.begin() ; iter != location.end() ; iter++)
         iter->print(os, indent + 1);
