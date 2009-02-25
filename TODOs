@@ -1,0 +1,9 @@
+1. Automake
+2. Proxy support
+3. JSON Parser
+4. String tables.
+5. Copyright
+6. Documentation (read doxygen)
+7. Walkthru.cc
+8. Bug fixes, of course
+9. Parsing error responses from APIs.
