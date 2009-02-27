@@ -6,4 +6,4 @@
 6. Documentation (read doxygen)
 7. Walkthru.cc
 8. Bug fixes, of course
-9. Parsing error responses from APIs.
+9. Pluggable parsers.

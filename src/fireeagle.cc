@@ -115,6 +115,53 @@ curl_response_chunk_handler(void *ptr, size_t size, size_t nmemb, void *data) {
     return realsize;
 }
 
+static FEXMLNode *parseXMLMessage(const string &msg) {
+    FEXMLParser parser;
+
+    FEXMLNode *root = parser.parse(msg);
+    if (!root)
+        throw new FireEagleException("Invalid XML error response from Fire Eagle",
+                                     FE_INTERNAL_ERROR, msg);
+
+    return root;
+}
+
+static bool isXMLErrorMsg(const FEXMLNode *root, const string &msg) {
+    if (root->element() != "rsp") {
+        delete root;
+        throw new FireEagleException("Unknown XML response format from Fire Eagle",
+                                     FE_INTERNAL_ERROR, msg);
+    }
+
+    if (root->attribute("stat") == "ok")
+        return false;
+
+    if (root->attribute("stat") != "fail") {
+        delete root;
+        throw new FireEagleException("Unknown XML response format from Fire Eagle",
+                                     FE_INTERNAL_ERROR, msg);
+    }
+
+    if (root->child(0).element() != "err") {
+        delete root;
+        throw new FireEagleException("Unknown XML response format from Fire Eagle",
+                                     FE_INTERNAL_ERROR, msg);
+    }
+
+    return true;
+}
+
+static FireEagleException *exceptionFromXML(const FEXMLNode *root) {
+    //Ideally this is not the guy who is being forced to throw any exception
+    //It is just a factory method.
+    string message("Remote error: ");
+    message.append(root->child(0).attribute("msg"));
+    FireEagleException *e = new FireEagleException(message,
+                    strtol(root->child(0).attribute("code").c_str(), NULL, 0));
+
+    return e;
+}
+
 string FireEagle::FE_ROOT("http://fireeagle.yahoo.net");
 string FireEagle::FE_API_ROOT("https://fireeagle.yahooapis.com");
 bool FireEagle::FE_DEBUG = false;
@@ -174,9 +221,21 @@ string FireEagle::http(const string &url, const string postData) const {
         throw new FireEagleException(os.str(), FE_CONNECT_FAILED);
     }
     if (responseCode != 200) {
-        ostringstream os;
-        os << "Request to " << url << " failed: HTTP error " << responseCode;
-        throw new FireEagleException(os.str(), FE_REQUEST_FAILED, response);
+        if (contentType == "application/xml") { //Si Habla XML!!
+            FEXMLNode *root = parseXMLMessage(response);
+            if (isXMLErrorMsg(root, response)) {
+                FireEagleException *e = exceptionFromXML(root);
+                delete root;
+                throw e;
+            } //Don't do an else part. Even if we get a valid response with a non
+              //200 HTTP code, proceed.
+            delete root;
+        } else {
+            ostringstream os;
+            os << "Request to " << url << " failed: HTTP error " << responseCode;
+            os << " Content Type: " << contentType;
+            throw new FireEagleException(os.str(), FE_REQUEST_FAILED, response);
+        }
     }
 
     if (FireEagle::FE_DUMP_REQUESTS) {
@@ -424,25 +483,11 @@ string FireEagle::user(enum FE_format format) const {
 extern FE_user userFactory(const FEXMLNode *root);
 
 FE_user FireEagle::user_object(const string &response, enum FE_format format) const {
-
-    FEXMLParser parser;
-
-    FEXMLNode *root = parser.parse(response);
-    if (!root)
-        throw new FireEagleException("Invalid XML response for user API", FE_INTERNAL_ERROR,
-                                     response);
-
-    if (root->element() != "rsp")
-        throw new FireEagleException("Unknown XML response format for user API",
-                                     FE_INTERNAL_ERROR, response);
-    if (root->attribute("stat") != "ok") {
-        if (root->child(0).element() != "err")
-            throw new FireEagleException("Unknown XML error format for user API",
-                                         FE_INTERNAL_ERROR, response);
-        string message("Remote error: ");
-        message.append(root->child(0).attribute("msg"));
-        throw new FireEagleException(message,
-                                  strtol(root->child(0).attribute("code").c_str(), NULL, 0));
+    FEXMLNode *root = parseXMLMessage(response);
+    if (isXMLErrorMsg(root, response)) {
+        FireEagleException *e = exceptionFromXML(root);
+        delete root;
+        throw e;
     }
 
     try {
@@ -473,25 +518,11 @@ extern list<FE_location> lookupFactory(const FEXMLNode *root);
 
 list<FE_location> FireEagle::lookup_objects(const string &response,
                                             enum FE_format format) const {
-
-    FEXMLParser parser;
-
-    FEXMLNode *root = parser.parse(response);
-    if (!root)
-        throw new FireEagleException("Invalid XML response for lookup API", FE_INTERNAL_ERROR,
-                                     response);
-
-    if (root->element() != "rsp")
-        throw new FireEagleException("Unknown XML response format for lookup API",
-                                     FE_INTERNAL_ERROR, response);
-    if (root->attribute("stat") != "ok") {
-        if (root->child(0).element() != "err")
-            throw new FireEagleException("Unknown XML error format for lookup API",
-                                         FE_INTERNAL_ERROR, response);
-        string message("Remote error: ");
-        message.append(root->child(0).attribute("msg"));
-        throw new FireEagleException(message,
-                                  strtol(root->child(0).attribute("code").c_str(), NULL, 0));
+    FEXMLNode *root = parseXMLMessage(response);
+    if (isXMLErrorMsg(root, response)) {
+        FireEagleException *e = exceptionFromXML(root);
+        delete root;
+        throw e;
     }
 
     bool found = false;
