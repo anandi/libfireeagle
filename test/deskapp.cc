@@ -374,6 +374,9 @@ int main(int argc, char *argv[]) {
         }
     } catch (FireEagleException *e) {
         cerr << "Caught a FEException" << endl;
+        cerr << "Message: '" << e->msg << "' , Code: " << e->code << endl;
+        if (e->response.length() > 0)
+            cerr << "Response body: " << e->response << endl;
     }
 
     return 0;
