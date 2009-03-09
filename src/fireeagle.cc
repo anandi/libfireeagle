@@ -12,7 +12,6 @@
 
 #include <string.h>
 #include <stdlib.h> //for malloc.
-#include <curl/curl.h>
 
 extern "C" {
 #include "oauth.h"
@@ -34,13 +33,6 @@ FireEagleException::FireEagleException(const string &_msg, int _code, const stri
 }
 
 FireEagleException::~FireEagleException() throw() {}
-
-ostream &FireEagleException::operator<<(ostream &os) {
-    os << "Fire Eagle Exception: " << msg << " (code = " << code << endl;
-    if (response.length())
-        os << "Response: " << response << endl;
-    return os;
-}
 
 OAuthTokenPair::OAuthTokenPair(const string &_token, const string &_secret)
     : token(_token), secret(_secret) {}
@@ -105,16 +97,6 @@ void OAuthTokenPair::save(const string &file) const {
 
 const FE_ParamPairs empty_params;
 
-extern "C" size_t
-curl_response_chunk_handler(void *ptr, size_t size, size_t nmemb, void *data) {
-    size_t realsize = size * nmemb;
-    string *sp = (string *)data;
-
-    sp->append((char *)ptr);
-
-    return realsize;
-}
-
 static FEXMLNode *parseXMLMessage(const string &msg) {
     FEXMLParser parser;
 
@@ -166,7 +148,11 @@ string FireEagle::FE_ROOT("http://fireeagle.yahoo.net");
 string FireEagle::FE_API_ROOT("https://fireeagle.yahooapis.com");
 bool FireEagle::FE_DEBUG = false;
 bool FireEagle::FE_DUMP_REQUESTS = false;
-bool FireEagle::FE_VERIFY_PEER = true;
+
+FireEagleHTTPAgent *FireEagle::HTTPAgent(const string &url,
+                                         const string &postdata) const {
+    return new FireEagleCurl(url, postdata);
+}
 
 // Make an HTTP request, throwing an exception if we get anything other than a 200 response
 string FireEagle::http(const string &url, const string postData) const {
@@ -178,48 +164,39 @@ string FireEagle::http(const string &url, const string postData) const {
         dump(os.str());
     }
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
-        throw new FireEagleException("Failed to initialize curl", FE_CONNECT_FAILED);
-
-    char *CA_path = getenv("CURL_CA_BUNDLE_PATH");
-    if (CA_path)
-        curl_easy_setopt(curl, CURLOPT_CAINFO, CA_path);
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30);
     string response;
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_response_chunk_handler);
-    if (!FireEagle::FE_VERIFY_PEER) {
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
-    }
-    if (postData.length()) {
-        curl_easy_setopt(curl, CURLOPT_POST, 1);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
-    }
-
-    curl_easy_perform(curl);
-        
+    string contentType;
+    long contentLength;
     long responseCode;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
-    double contentLength;
-    curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &contentLength);
 
-    char *cType; //Don't free.
-    curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &cType);
-    string s((cType) ? cType : "<Unknown>");
-    size_t pos = s.find(';');
-    string contentType = s.substr(0, pos);
+    try {
+        FireEagleHTTPAgent *agent = HTTPAgent(url, postData);
+        agent->initialize_agent();
+        agent->set_custom_request_opts();
+        responseCode = agent->make_call();
+        if (!responseCode) {
+            responseCode = agent->agent_error();
+            ostringstream os;
+            os << "Connection to " << url << " failed with agent error "<< responseCode;
+            throw new FireEagleException(os.str(), FE_CONNECT_FAILED);
+        }
 
-    curl_easy_cleanup(curl);
+        response = agent->get_response();
 
-    if (!responseCode) {
-        ostringstream os;
-        os << "Connection to " << url << " failed";
-        throw new FireEagleException(os.str(), FE_CONNECT_FAILED);
+        string content_length = agent->get_header("Content-Length");
+        contentLength = strtol(content_length.c_str(), NULL, 0);
+
+        string content_type = agent->get_header("Content-Type");
+        size_t pos = content_type.find(';');
+        contentType = content_type.substr(0, pos);
+
+        delete agent;
+    } catch (FireEagleHTTPException *e) {
+        FireEagleException *fex = new FireEagleException(e->msg, FE_INTERNAL_ERROR);
+        delete e;
+        throw fex;
     }
+
     if (responseCode != 200) {
         if (contentType == "application/xml") { //Si Habla XML!!
             FEXMLNode *root = parseXMLMessage(response);

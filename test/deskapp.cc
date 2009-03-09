@@ -10,6 +10,42 @@
 #include <stdlib.h>
 #include "fireeagle.h"
 
+#include <curl/curl.h>
+
+//Extend the default Curl HTTP Agent to handle HTTPS_noverify.
+class MyFireEagleCurlAgent : public FireEagleCurl {
+  public:
+    static bool https_noverify;
+
+    MyFireEagleCurlAgent(const string &url, const string &post)
+        : FireEagleCurl(url, post) {}
+
+  protected:
+    void set_custom_request_opts() {
+        //Dangerous stuff to do! Please do not do such things in production.
+        if (https_noverify) {
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+        }
+    }
+};
+
+bool MyFireEagleCurlAgent::https_noverify = false;
+
+//Extended to use a different HTTP agent (actuall different agent settings)
+class MyFireEagle : public FireEagle {
+  protected:
+    FireEagleHTTPAgent *HTTPAgent(const string &url,
+                                  const string &postdata) const {
+        return new MyFireEagleCurlAgent(url, postdata);
+    }
+
+  public:
+    MyFireEagle(const string &_consumerKey, const string &_consumerSecret,
+                const string &_oAuthToken = "", const string &_oAuthTokenSecret = "")
+        : FireEagle(_consumerKey, _consumerSecret, _oAuthToken, _oAuthTokenSecret) {}
+};
+
 void usage() {
     cout << "Arguments (common):" << endl;
     cout << "\t--help (Shows this help)" << endl;
@@ -259,7 +295,7 @@ int main(int argc, char *argv[]) {
             FireEagle::FE_DEBUG = true;
             i++;
         } else if (strcmp(argv[i], "--https-noverify") == 0) {
-            FireEagle::FE_VERIFY_PEER = false;
+            MyFireEagleCurlAgent::https_noverify = true;
             i++;
         } else if ((idx == -1) && (strncmp(argv[i], "--", 2) == 0)) {
             idx = i;
@@ -292,12 +328,12 @@ int main(int argc, char *argv[]) {
 
     try {
         if (strcmp(argv[idx], "--get_request_tok") == 0) {
-            FireEagle fe(consumer.token, consumer.secret);
+            MyFireEagle fe(consumer.token, consumer.secret);
             OAuthTokenPair tok = request_token(fe);
             if (save_file.length() > 0)
                 tok.save(save_file);
         } else if (strcmp(argv[idx], "--get_authorize_url") == 0) {
-            FireEagle fe(consumer.token, consumer.secret);
+            MyFireEagle fe(consumer.token, consumer.secret);
             if (oauth_tok.token.length() == 0) {
                 cout << "Generating request .... " << endl;
                 oauth_tok = request_token(fe);
@@ -310,7 +346,7 @@ int main(int argc, char *argv[]) {
                 cout << "You must provide the request token and secret. Run with --get_authorize_url to generate the tokens and to access the generated URL before this step" << endl;
                 return 0;
             }
-            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
             OAuthTokenPair access = access_token(fe);
             if (save_file.length() > 0)
                 access.save(save_file);
@@ -319,14 +355,14 @@ int main(int argc, char *argv[]) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
-            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
             location(fe, (json)? "json" : "");
         } else if (strcmp(argv[idx], "--lookup") == 0) {
             if (oauth_tok.token.length() == 0) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
-            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
@@ -339,7 +375,7 @@ int main(int argc, char *argv[]) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
-            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
@@ -352,7 +388,7 @@ int main(int argc, char *argv[]) {
                 cout << "You must provide the general token and secret." << endl;
                 return 0;
             }
-            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
@@ -365,7 +401,7 @@ int main(int argc, char *argv[]) {
                 cout << "You must provide the general token and secret." << endl;
                 return 0;
             }
-            FireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             recent(fe, args, (json) ? "json" : "");

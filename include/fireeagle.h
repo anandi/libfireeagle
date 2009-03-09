@@ -13,6 +13,7 @@
 #include <map>
 
 #include "fire_objects.h"
+#include "fireeagle_http.h"
 
 using namespace std;
 
@@ -55,27 +56,77 @@ using namespace std;
 #define FE_REMOTE_RATE_LIMITING 32 // Rate limit/IP Block due to excessive requests.
 #define FE_REMOTE_INTERNAL_ERROR 50 // Internal error occurred; try again later.
 
+/**
+ * FireEagleException: The only exception class that is used for all kinds of
+ * exceptions.
+ */
 class FireEagleException : public exception {
   public:
+    /**
+     * msg: English language message string containing the cause of the
+     * exception.
+     */
     string msg;
+    /**
+     * code: The local or remote error code.
+     */
     int code;
-    string response; // for REMOTE_ERROR codes, this is the response from FireEagle (useful: $response->code and $response->message)
+    /**
+     * response: The response (if any) string received in the content body
+     * from the server.
+     */
+    string response;
 
+    /**
+     * FireEagleException: Standard constructor.
+     * @_msg: Mandatory const string.
+     * @_code: Error code.
+     * @_response: Optional response body from server. Empty string by default.
+     */
     FireEagleException(const string &_msg, int _code, const string &_response = "");
-    virtual ~FireEagleException() throw();
 
-    ostream &operator<<(ostream &os);
+    /**
+     * ~FireEagleException: Standard virtual destructor.
+     */
+    virtual ~FireEagleException() throw();
 };
 
+/**
+ * OAuthTokenPair: Class representing the OAuth token and secret.
+ */
 class OAuthTokenPair {
   public:
+    /**
+     * token: The OAuth token string.
+     */
     string token;
+    /**
+     * secret: The OAuth secret string.
+     */
     string secret;
 
+    /**
+     * OAuthTokenPair: Standard constructor.
+     */
     OAuthTokenPair(const string &_token, const string &_secret);
+
+    /**
+     * OAuthTokenPair: Copy constructor.
+     */
     OAuthTokenPair(const OAuthTokenPair &other);
+
+    /**
+     * OAuthTokenPair: Constructor as deserializer.
+     * @file: FIle name to read token and secret. See 'save' method for details
+     * of file format.
+     */
     OAuthTokenPair(const string &file);
 
+    /**
+     * save: Serializer
+     * @file: File name to write the token and secret to. File contains a single
+     * line of the form -- '<token> <secret>\n'
+     */
     void save(const string &file) const;
 };
 
@@ -112,8 +163,15 @@ class FireEagle {
     virtual OAuthTokenPair oAuthParseResponse(const string &response) const;
 
     // Format and sign an OAuth / API request. Protected for testing.
-    string oAuthRequest(const string &url, const FE_ParamPairs &args = empty_params,
-                        bool isPost = false) const;
+    virtual string oAuthRequest(const string &url,
+                                const FE_ParamPairs &args = empty_params,
+                                bool isPost = false) const;
+
+    // Get an abstracted HTTP agent class to use. Can be extended to support
+    // any extensible functionality in the agents. Returns a CURL agent by
+    // default.
+    virtual FireEagleHTTPAgent *HTTPAgent(const string &url,
+                                          const string &postdata) const;
 
   public:
     /* It should be possible for the applications to override these if needed. */
@@ -121,8 +179,6 @@ class FireEagle {
     static string FE_API_ROOT;
     static bool FE_DEBUG; // set to true to print out debugging info
     static bool FE_DUMP_REQUESTS; // set to a pathname to dump out http requests to a log
-    //Dangerous thing to do... Do not use this as false in production!!
-    static bool FE_VERIFY_PEER;
 
     // OAuth URLs
     string requestTokenURL() const;
