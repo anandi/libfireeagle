@@ -29,6 +29,10 @@ run a 'make' from the command line. Provision for 'make clean' exists.
 
 After the make, the libfireeagle.so should be in the src/ directory.
 
+DOC:
+After the build, assuming that you have doxygen installed, the class
+documentation should be available in doc/html
+
 TEST:
 There is a Makeile in the test directory. This builds test/deskapp. Please
 run test/deskapp --help to see different options.

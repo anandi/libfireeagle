@@ -1,3 +1,8 @@
+#
+# Makefile for libfireeagle.so
+#
+# Copyright (C) 2009 Yahoo! Inc
+#
 MAKE := make
 DOXYGEN := doxygen
 RMDIR := rm -Rf
