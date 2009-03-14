@@ -1,11 +1,9 @@
 1. Automake
-2. Proxy support
-3. JSON Parser
-4. String tables.
-5. Copyright
-6. Documentation (read doxygen)
-7. Walkthru.cc
-8. Bug fixes, of course
-9. Pluggable parsers.
-10. VERSION
-11. make install
+2. JSON Parser
+3. String tables.
+4. Copyright
+5. Walkthru.cc
+6. Bug fixes, of course
+7. Pluggable parsers.
+8. VERSION
+9. make install

@@ -24,8 +24,10 @@ work on one, please let me know the changes, I will be happy to merge it in
 BUILD:
 Assuming that the above dependencies are installed in the standard places where
 the default compilation process can find the headers and the libraries. The
-Makefile provided in src directory should build fine with most GNU toolchains,
-so just run a 'make' from the command line. Provision for 'make clean' exists.
+toplevel Makefile provided should build fine with most GNU toolchains, so just
+run a 'make' from the command line. Provision for 'make clean' exists.
+
+After the make, the libfireeagle.so should be in the src/ directory.
 
 TEST:
 There is a Makeile in the test directory. This builds test/deskapp. Please
