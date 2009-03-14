@@ -57,160 +57,331 @@ using namespace std;
 #define FE_REMOTE_INTERNAL_ERROR 50 // Internal error occurred; try again later.
 
 /**
- * FireEagleException: The only exception class that is used for all kinds of
- * exceptions.
+ * Used for all kinds of exceptions resulting from Fire Eagle transaction logic.
  */
 class FireEagleException : public exception {
   public:
     /**
-     * msg: English language message string containing the cause of the
-     * exception.
+     * English language message string containing the cause of the exception.
      */
     string msg;
     /**
-     * code: The local or remote error code.
+     * The local or remote error code.
      */
     int code;
     /**
-     * response: The response (if any) string received in the content body
+     * The response (if any) string received in the content body
      * from the server.
      */
     string response;
 
     /**
-     * FireEagleException: Standard constructor.
-     * @_msg: Mandatory const string.
-     * @_code: Error code.
-     * @_response: Optional response body from server. Empty string by default.
+     * Standard constructor.
+     * @param _msg Mandatory const string.
+     * @param _code Mandatory error code.
+     * @param _response Optional response body from server. Empty string by default.
      */
     FireEagleException(const string &_msg, int _code, const string &_response = "");
 
     /**
-     * ~FireEagleException: Standard virtual destructor.
+     * Standard virtual destructor.
      */
     virtual ~FireEagleException() throw();
 };
 
 /**
- * OAuthTokenPair: Class representing the OAuth token and secret.
+ * Class representing the OAuth token and secret. For more details on OAuth,
+ * visit http://oauth.net/ . Tokens can be of type:
+ * - Consumer Key - Equivalent to an application's registration ID with Fire Eagle
+ * - General Token - Given only to applications that qualify as a web app (i.e.
+ * has a callback URL registered with Fire Eagle
+ * - Request Token - Used as a transient token for authorizing individual users
+ * on Fire Eagle
+ * - Access Token - Actual per-user token for accessing any user's resources from
+ * Fire Eagle.
  */
 class OAuthTokenPair {
   public:
     /**
-     * token: The OAuth token string.
+     * The OAuth token string.
      */
     string token;
     /**
-     * secret: The OAuth secret string.
+     * The OAuth secret string.
      */
     string secret;
 
     /**
-     * OAuthTokenPair: Standard constructor.
+     * Standard constructor. Can be used for any kind of OAuth token used for
+     * Fire Eagle transactions. Tokens can be of type:
+     * @param _token The OAuth token
+     * @param _secret The secret associated with _token.
      */
     OAuthTokenPair(const string &_token, const string &_secret);
 
     /**
-     * OAuthTokenPair: Copy constructor.
+     * Copy constructor.
      */
     OAuthTokenPair(const OAuthTokenPair &other);
 
     /**
-     * OAuthTokenPair: Constructor as deserializer.
-     * @file: FIle name to read token and secret. See 'save' method for details
+     * Constructor as deserializer.
+     * @param file File name to read token and secret. See 'save' method for details
      * of file format.
      */
     OAuthTokenPair(const string &file);
 
     /**
-     * save: Serializer
-     * @file: File name to write the token and secret to. File contains a single
-     * line of the form -- '<token> <secret>\n'
+     * Serializer
+     * @param file File name to write the token and secret to. File contains a single
+     * line of the form -- '&lt;token&gt; &lt;secret&gt;'
      */
     void save(const string &file) const;
 };
 
-//extern const OAuthTokenPair empty_token;
-
+/**
+ * enum for supported formats for API response from Fire Eagle.
+ */
 enum FE_format { FE_FORMAT_XML = 1, FE_FORMAT_JSON };
 
-//To cut down on long names for data types...
+/**
+ * Typedef to cut down on long names for data types...
+ */
 typedef map<string,string> FE_ParamPairs;
 
 extern const FE_ParamPairs empty_params;
 
 /**
- * FireEagle API access helper class.
+ * FireEagle API access helper class. See http://fireeagle.yahoo.net/ for details.
+ * Almost all methods tend to raise FireEagleException on any kind of internal or
+ * external failure.
  */
 class FireEagle {
   private:
     OAuthTokenPair *consumer;
     OAuthTokenPair *token;
 
-    // Make an HTTP request, throwing an exception if we get anything other than a 200 response
+    /** Make an HTTP request, throwing an exception if we get anything
+     * other than a 200 response. Request type (GET or POST) is decided by the
+     * the length of the 'postData' param.
+     * @param url Complete URL with any GET query params. Params should be URL encoded.
+     * @param postData Empty string by default, unless request is a POST. 
+     * @return Response string on success.
+     */
     string http(const string &url, const string postData = "") const;
 
-    //Check that a proper token is set for the operation.
+    /** Check that a proper token is set for the operation being invoked.
+     * Throws exception if token is not present
+     */
     void requireToken() const;
+
+    /** Generic interface for API calls.
+     * @param method Name of the method being called.
+     * @param args list of key-value pairs to be passed as arguments to the API call.
+     * @param isPost False by default. Set to true to make a POST request.
+     * @param format Choose either XML (default) or JSON.
+     * @return Response string on success.
+     */
     string call(const string &method, const FE_ParamPairs &args = empty_params,
                 bool isPost = false, enum FE_format format = FE_FORMAT_XML) const;
   protected:
-    //Override to suit your own debug style.
+    /** This function is called with debug messages when FE_DEBUG is turned on.
+     * Override to suit your own debug style. Default implementation outputs strings
+     * to cout.
+     * @param str Debug message string.
+     */
     virtual void dump(const string &str) const;
   
-    // Parse a URL-encoded OAuth response. Override as responses become more fancy with
-    // version.
+    /** Parse a URL-encoded OAuth response. This is not the same as a response from a
+     * Fire Eagle API response. It is used for getting OAuth tokens, especially request
+     * and access tokens. Override to do any extra processing or dumping.
+     * @param response URL encoded response string containing OAuth token and secret.
+     * @return Parsed object for token and secret.
+     */
     virtual OAuthTokenPair oAuthParseResponse(const string &response) const;
 
-    // Format and sign an OAuth / API request. Protected for testing.
+    /** Format and sign an OAuth / API request. Protected for testing.
+     * @param url Complete URL with any GET query params. Params should be URL encoded.
+     * @param args list of key-value pairs to be passed as arguments to the API call.
+     * @param isPost False by default. Set to true to make a POST request.
+     * @return HTTP response body.
+     */
     virtual string oAuthRequest(const string &url,
                                 const FE_ParamPairs &args = empty_params,
                                 bool isPost = false) const;
 
-    // Get an abstracted HTTP agent class to use. Can be extended to support
-    // any extensible functionality in the agents. Returns a CURL agent by
-    // default.
+    /** Get an abstracted HTTP agent class to use. Can be extended to support
+     * any extensible functionality in the agents. Arguments are passed directly to the
+     * constructor of the actual agent.
+     * @param url Complete URL with any GET query params. Params should be URL encoded.
+     * @param postdata Empty string by default, unless request is a POST. 
+     * @return A FireEagleHTTPAgent pointer (FireEagleCurl agent by default).
+     */
     virtual FireEagleHTTPAgent *HTTPAgent(const string &url,
-                                          const string &postdata) const;
+                                          const string &postdata = "") const;
 
   public:
-    /* It should be possible for the applications to override these if needed. */
+    /** Contains the root URL for Fire Eagle installation. Should be possible to
+     * override and point to some other test install by internal QA.
+     */
     static string FE_ROOT;
-    static string FE_API_ROOT;
-    static bool FE_DEBUG; // set to true to print out debugging info
-    static bool FE_DUMP_REQUESTS; // set to a pathname to dump out http requests to a log
 
-    // OAuth URLs
+    /** Contains the base URL for the API methods. Should be possible to override
+     * and point to some other test install by internal QA.
+     */
+    static string FE_API_ROOT;
+
+    /** Set to true to turn on debug message dumps through the 'dump' method.
+     */
+    static bool FE_DEBUG;
+
+    /** Set to true to turn on dumping of requests and responses to cerr */
+    static bool FE_DUMP_REQUESTS;
+
+    /** Generates the URL for the HTTP GET request for getting a OAuth Request Token.
+     * @return URL string.
+     */
     string requestTokenURL() const;
+
+    /** Generates the base URL for the HTTP GET request with which to redirect the user
+     * to Fire Eagle site for authorization. See also: FireEagle::getAuthorizeURL.
+     * @return URL string.
+     */
     string authorizeURL() const;
+
+    /** Generates the URL for the HTTP GET request for retrieving a OAuth Access Token
+     * for an user once authorization has been performed with the request token.
+     * @return URL string.
+     */
     string accessTokenURL() const;
 
-    // API URLs
+    /** Utility method for generating a URL calling a specific API. Available APIs are:
+     * - user (Looks up a given user's location. Needs an access token)
+     * - lookup (Geocodes a generic location to a lat/lon pair and a WOEID. Needs a
+     * access or general token)
+     * - update (Updates a user's location in Fire Eagle database. Needs an access token)
+     * - within (Gets the list of all user tokens accessible by the consumer key,
+     * who are currently within the geographic area denoted by a WOEID sent as argument)
+     * - recent (Get the list of all user tokens who have updated their location
+     * recently)
+     * @param method The name of the API being called.
+     * @param format Enum to specify the response format (XML by default).
+     * @return URL string with query params, without the API specific arguments.
+     */
     string methodURL(const string &method, enum FE_format format = FE_FORMAT_XML) const;
 
-    //Useful methods...
-    OAuthTokenPair getRequestToken(); //Updates self internally with token received.
-    OAuthTokenPair request_token(); //Aliased to getRequestToken().
-    OAuthTokenPair getAccessToken(); //Exchange a request token for an access token.
-    OAuthTokenPair access_token(); //Aliased to getAccessToken.
+    /** Query Fire Eagle to extract a request token. Updates 'this' internally with
+     * the request token received.
+     * @return OAuthTokenPair representing the request token received. In case of
+     * error, returns a instance with zero-length string for token.
+     */
+    OAuthTokenPair getRequestToken();
 
-    //Actual API calls:
+    /** Aliased to getRequestToken */
+    OAuthTokenPair request_token();
+
+    /** Query Fire Eagle to extract a access token based on the Request token which
+     * is currently set in 'this'. Updates 'this' internally to use the access token
+     * received.
+     * @return OAuthTokenPair representing the access token received. In case of
+     * error, returns a instance with zero-length string for token.
+     */
+    OAuthTokenPair getAccessToken();
+
+    /** Aliased to getAccessToken. */
+    OAuthTokenPair access_token();
+
+    /** The 'user' API call. Uses the token in 'this' as the access token.
+     * See http://fireeagle.yahoo.net/developer/explorer for more details on
+     * individual APIs and parameters.
+     * @param format Enum to specify the response format (XML by default).
+     * @return HTTP response in the format requested.
+     */
     string user(enum FE_format format = FE_FORMAT_XML) const;
+
+    /** Helper method to make a parsed object from the response received from
+     * 'user' method. Currently supports on XML parsing.
+     * @param response String returned by call to FireEagle::user method.
+     * @param format Enum to specify the response format (XML by default).
+     * @return An instance of FE_user.
+     */
     FE_user user_object(const string &response, enum FE_format format = FE_FORMAT_XML) const;
+
+    /** The 'update' API call. Uses the token in 'this' as the access token.
+     * See http://fireeagle.yahoo.net/developer/explorer for more details on
+     * individual APIs and parameters.
+     * @param args Actual name-value pairs as arguments for API.
+     * @param format Enum to specify the response format (XML by default).
+     * @return HTTP response in the format requested.
+     */
     string update(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
+
+    /** The 'lookup' API call. Uses the token in 'this' as the access token.
+     * See http://fireeagle.yahoo.net/developer/explorer for more details on
+     * individual APIs and parameters.
+     * @param args Actual name-value pairs as arguments for API.
+     * @param format Enum to specify the response format (XML by default).
+     * @return HTTP response in the format requested.
+     */
     string lookup(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
+
+    /** Helper method to make a parsed object from the response received from
+     * 'lookup' method. Currently supports on XML parsing.
+     * @param response String returned by call to FireEagle::lookup method.
+     * @param format Enum to specify the response format (XML by default).
+     * @return A list of FE_location as a list of potential location(s) that the
+     * arguments of the FireEagle::lookup call geo-coded to. If there are more than
+     * one, it is the responsibility of the caller to get it disambiguated when
+     * making a FireEagle::update call.
+     */
     list<FE_location> lookup_objects(const string &response,
                                      enum FE_format format = FE_FORMAT_XML) const;
 
-    //Use the following API calls only in case of a Web application.
+    /** The 'within' API call. Uses the token in 'this' as the general token.
+     * Note that this API is available to only consumer keys that have a
+     * corresponding general token, i.e. consumer keys given to applications that
+     * have registered as a web application.
+     * See http://fireeagle.yahoo.net/developer/explorer for more details on
+     * individual APIs and parameters.
+     * @param args Actual name-value pairs as arguments for API.
+     * @param format Enum to specify the response format (XML by default).
+     * @return HTTP response in the format requested.
+     */
     string within(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
+
+    /** The 'recent' API call. Uses the token in 'this' as the general token.
+     * Note that this API is available to only consumer keys that have a
+     * corresponding general token, i.e. consumer keys given to applications that
+     * have registered as a web application.
+     * See http://fireeagle.yahoo.net/developer/explorer for more details on
+     * individual APIs and parameters.
+     * @param args Actual name-value pairs as arguments for API.
+     * @param format Enum to specify the response format (XML by default).
+     * @return HTTP response in the format requested.
+     */
     string recent(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
 
-    //Less useful methods...
+    /** Generate an actual URL with which to redirect the user to Fire Eagle site
+     * along with a request token, so that the user can authorize the application
+     * to access the location.
+     * @param oauth OAuthTokenPair representing the request token from Fire Eagle.
+     * see FireEagle::getRequestToken for getting the request token.
+     * @return URL to which the user should be redirected (complete with GET parameters).
+     */
     string getAuthorizeURL(const OAuthTokenPair &oauth) const;
-    string authorize(const OAuthTokenPair &oauth) const; //Aliased to getAuthorizeURL
+
+    /** Aliased to getAuthorizeURL. */
+    string authorize(const OAuthTokenPair &oauth) const;
 
     //Constructors, destructors and paraphanelia
+    /**
+     * @param _consumerKey OAuth token received from Fire Eagle site by registering
+     * the application.
+     * @param _consumerSecret Secret string corresponding to the _consumerKey.
+     * @param _oAuthToken Optional. Can specify any kind of token, based on the
+     * use. For individual method calls, see the kind of OAuth token required.
+     * @param _oAuthTokenSecret Optional. Must be specified along with any _oAuthToken.
+     */
     FireEagle(const string &_consumerKey, const string &_consumerSecret,
               const string &_oAuthToken = "", const string &_oAuthTokenSecret = "");
     ~FireEagle();
