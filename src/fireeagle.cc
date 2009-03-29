@@ -24,12 +24,14 @@ extern "C" {
 using namespace std;
 
 FireEagleException::FireEagleException(const string &_msg, int _code, const string &_response)
-    : msg(_msg), code(_code), response(_response) {
-    if (FireEagle::FE_DEBUG) {
-        cerr << "FireEagleException (code: " << _code << "): " << msg << endl;
-        if (response.length())
-            cerr << "Response is: " << response << endl;
-    }
+    : msg(_msg), code(_code), response(_response) {}
+
+string FireEagleException::to_string() const {
+    ostringstream os;
+
+    os << "FireEagleException (code: " << code << "): " << msg << endl;
+    if (response.length())
+        os << "Response is: " << response << endl;
 }
 
 FireEagleException::~FireEagleException() throw() {}
@@ -60,26 +62,39 @@ OAuthTokenPair::OAuthTokenPair(const string &file) {
     char *pos = &(buffer[strlen(buffer) - 1]); //Last char may be '\n'
     if (*pos == '\n')
         *pos = 0;
-    pos = strchr(buffer, ' '); //Search for the separator whitespace.
-    if (!pos) {
+    try {
+        init_from_string(&(buffer[0]));
+    } catch (FireEagleException *fe) {
+        delete fe;
         ostringstream os;
         os << "Token file: " << file << " . Invalid format.";
         throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
     }
+}
+
+void OAuthTokenPair::init_from_string(const char *str) {
+    char *pos = strchr(str, ' '); //Search for the separator whitespace.
+    if (!pos)
+        throw new FireEagleException("Invalid format", FE_INTERNAL_ERROR);
 
     *pos = 0; pos++;
-    if (!strlen(buffer) || !strlen(pos)) {
-        ostringstream os;
-        os << "Token file: " << file << " . Invalid format.";
-        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
-    }
+    if (!strlen(str) || !strlen(pos))
+        throw new FireEagleException("Invalid format", FE_INTERNAL_ERROR);
 
-    token.append(buffer);
-    secret.append(pos);
+    token = string(str);
+    secret = string(pos);
+}
+
+string OAuthTokenPair::to_string() const {
+    string data(token);
+    data.append(" ");
+    data.append(secret);
+
+    return data;
 }
 
 void OAuthTokenPair::save(const string &file) const {
-    if (!token.length() || !secret.length()) {
+    if (!is_valid()) {
         throw new FireEagleException("Cannot save an empty OAuthTokenPair.",
                                      FE_INTERNAL_ERROR);
     }
@@ -91,11 +106,138 @@ void OAuthTokenPair::save(const string &file) const {
         throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
     }
 
-    fprintf(fp, "%s %s\n", token.c_str(), secret.c_str());
+    string str = to_string();
+    fprintf(fp, "%s\n", str.c_str());
     fclose(fp);
 }
 
+bool OAuthTokenPair::is_valid() const {
+    if (!token.length() || !secret.length())
+        return false;
+
+    return true;
+}
+
 const FE_ParamPairs empty_params;
+
+void FireEagleConfig::common_init() {
+    this->FE_ROOT = "http://fireeagle.yahoo.net";
+    this->FE_API_ROOT = "https://fireeagle.yahooapis.com";
+    this->FE_DEBUG = false;
+    this->FE_DUMP_REQUESTS = false;
+}
+
+FireEagleConfig::FireEagleConfig(const OAuthTokenPair &_app_token)
+    : app_token(_app_token), general_token("","") {
+    common_init();
+}
+
+FireEagleConfig::FireEagleConfig(const OAuthTokenPair &_app_token,
+                                 const OAuthTokenPair &_general_token)
+    : app_token(_app_token), general_token(_general_token) {
+    common_init();
+}
+
+FireEagleConfig::FireEagleConfig(const string &conf_file)
+    : app_token("",""), general_token("","") {
+    common_init();
+
+    FILE *fp = fopen(conf_file.c_str(), "r");
+    if (!fp) {
+        string msg("FireEagleConfig: Failed to open configuration file ");
+        msg.append(conf_file);
+        msg.append(" for loading");
+        throw new FireEagleException(msg, FE_INTERNAL_ERROR);
+    }
+
+    char buffer[1024]; //I wonder whether we shall need anything more.
+    int line_no = 0;
+    while (!feof(fp)) {
+        if (!fgets(buffer, 1023, fp))
+            break;
+        //Read a line.
+        line_no++;
+        char *c = &(buffer[strlen(buffer) - 1]);
+        if (*c == '\n')
+            *c = 0;
+        else {
+            ostringstream os;
+            os << "FireEagleConfig: Failure to read complete line from config file ";
+            os << conf_file << ":" << line_no;
+            fclose(fp);
+            throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+        }
+        if (buffer[0] == '#')
+            continue;
+        c = strchr(buffer, ':');
+        if (!c) {
+            ostringstream os;
+            os << "FireEagleConfig: Invalid config statement '" << buffer << "'";
+            os << " in config file " << conf_file << " at line " << line_no;
+            throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+        }
+
+        *c = 0; c++; //Split into name and value
+        if (strcmp(buffer, "app_token_file") == 0) {
+            app_token = OAuthTokenPair(c);
+        } else if (strcmp(buffer, "app_token_data") == 0) {
+            app_token.init_from_string(c);
+        } else if (strcmp(buffer, "general_token_file") == 0) {
+            general_token = OAuthTokenPair(c);
+        } else if (strcmp(buffer, "general_token_data") == 0) {
+            general_token.init_from_string(c);
+        } else if (strcmp(buffer, "root_url") == 0) {
+            FE_ROOT = string(c);
+        } else if (strcmp(buffer, "api_base_url") == 0) {
+            FE_API_ROOT = string(c);
+        } else {
+            //No match. Ignore. We do not need to throw exceptions.
+            continue;
+        }
+    }
+    fclose(fp);
+
+    if (!app_token.is_valid()) {
+        string msg("FireEagleConfig: Could not initialize application token from config file ");
+        msg.append(conf_file);
+        throw new FireEagleException(msg, FE_INTERNAL_ERROR);
+    }
+}
+
+FireEagleConfig::~FireEagleConfig() {} //Nothing much to do right now.
+
+static void write_config(FILE *fp, const string &name, const string &value) {
+    fprintf(fp, "%s:%s\n", name.c_str(), value.c_str());
+}
+
+void FireEagleConfig::save(const string &file) const {
+    if (!app_token.is_valid()) {
+        string msg("FireEagleConfig: Cannot save an invalid config.");
+        throw new FireEagleException(msg, FE_INTERNAL_ERROR);
+    }
+
+    FILE *fp = fopen(file.c_str(), "w");
+    if (!fp) {
+        ostringstream os;
+        os << "FireEagleConfig: Could not open config file (" << file << ") for saving.";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR);
+    }
+
+    write_config(fp, "app_token_data", app_token.to_string());
+    write_config(fp, "root_url", FE_ROOT);
+    write_config(fp, "api_base_url", FE_API_ROOT);
+    if (general_token.is_valid())
+        write_config(fp, "general_token_data", general_token.to_string());
+    fclose(fp);
+}
+
+const OAuthTokenPair *FireEagleConfig::get_consumer_key() const { return &app_token; }
+
+const OAuthTokenPair *FireEagleConfig::get_general_token() const {
+    if (general_token.is_valid())
+        return &general_token;
+    return NULL;
+}
 
 static FEXMLNode *parseXMLMessage(const string &msg) {
     FEXMLParser parser;
@@ -144,11 +286,6 @@ static FireEagleException *exceptionFromXML(const FEXMLNode *root) {
     return e;
 }
 
-string FireEagle::FE_ROOT("http://fireeagle.yahoo.net");
-string FireEagle::FE_API_ROOT("https://fireeagle.yahooapis.com");
-bool FireEagle::FE_DEBUG = false;
-bool FireEagle::FE_DUMP_REQUESTS = false;
-
 FireEagleHTTPAgent *FireEagle::HTTPAgent(const string &url,
                                          const string &postdata) const {
     return new FireEagleCurl(url, postdata);
@@ -156,9 +293,9 @@ FireEagleHTTPAgent *FireEagle::HTTPAgent(const string &url,
 
 // Make an HTTP request, throwing an exception if we get anything other than a 200 response
 string FireEagle::http(const string &url, const string postData) const {
-    if (FireEagle::FE_DEBUG)
+    if (config->FE_DEBUG)
         cerr << "[FE HTTP request: url: " << url << ", post data: " << postData << endl;
-    if (FireEagle::FE_DUMP_REQUESTS) {
+    if (config->FE_DUMP_REQUESTS) {
         ostringstream os;
         os << "[FE HTTP request: url: " << url << ", post data: " << postData;
         dump(os.str());
@@ -215,7 +352,7 @@ string FireEagle::http(const string &url, const string postData) const {
         }
     }
 
-    if (FireEagle::FE_DUMP_REQUESTS) {
+    if (config->FE_DUMP_REQUESTS) {
         ostringstream os;
         os << "HTTP/1.0 " << responseCode << " OK" << endl;
         os << "Content-Type: " << contentType << endl;
@@ -224,7 +361,7 @@ string FireEagle::http(const string &url, const string postData) const {
         dump(os.str());
     }
 
-    if (FireEagle::FE_DEBUG)
+    if (config->FE_DEBUG)
         cerr << "HTTP response: " << response << endl;
 
     return response;
@@ -250,13 +387,14 @@ string FireEagle::oAuthRequest(const string &url, const FE_ParamPairs &args, boo
     }
 
     char *postargs = NULL;
+    const OAuthTokenPair *consumer = config->get_consumer_key();
     char *result_tmp = oauth_sign_url(url_with_params.c_str(),
                                       (isPost) ? &postargs : NULL, OA_HMAC,
                                       consumer->token.c_str(), consumer->secret.c_str(),
                                       (token)? token->token.c_str() : NULL,
                                       (token)? token->secret.c_str() : NULL);
 
-    if (FireEagle::FE_DUMP_REQUESTS) {
+    if (config->FE_DUMP_REQUESTS) {
         ostringstream os;
         os << "FireEagle ";
         if (isPost)
@@ -280,20 +418,20 @@ string FireEagle::oAuthRequest(const string &url, const FE_ParamPairs &args, boo
 
 // OAuth URLs
 string FireEagle::requestTokenURL() const {
-    return string(FireEagle::FE_API_ROOT).append("/oauth/request_token");
+    return string(config->FE_API_ROOT).append("/oauth/request_token");
 }
 
 string FireEagle::authorizeURL() const {
-    return string(FireEagle::FE_ROOT).append("/oauth/authorize");
+    return string(config->FE_ROOT).append("/oauth/authorize");
 }
 
 string FireEagle::accessTokenURL() const {
-    return string(FireEagle::FE_API_ROOT).append("/oauth/access_token");
+    return string(config->FE_API_ROOT).append("/oauth/access_token");
 }
 
 // API URLs
 string FireEagle::methodURL(const string &method, enum FE_format format) const {
-    string url(FireEagle::FE_API_ROOT);
+    string url(config->FE_API_ROOT);
     url.append("/api/0.1/").append(method);
     switch (format) {
     case FE_FORMAT_XML:
@@ -306,30 +444,38 @@ string FireEagle::methodURL(const string &method, enum FE_format format) const {
     return url;
 }
 
-FireEagle::FireEagle(const string &_consumerKey, const string &_consumerSecret,
-                     const string &_oAuthToken, const string &_oAuthTokenSecret) {
-    consumer = new OAuthTokenPair(_consumerKey, _consumerSecret);
-    if (!consumer)
+FireEagle::FireEagle(FireEagleConfig *_config, const OAuthTokenPair &_token) {
+    if (!_config)
+        throw new FireEagleException("NULL pointer for FireEagleConfig", FE_INTERNAL_ERROR);
+    if (!_token.is_valid())
+        throw new FireEagleException("Invalid OAuthTokenPair in constructor",
+                                     FE_INTERNAL_ERROR);
+    config = _config;
+    token = new OAuthTokenPair(_token);
+    if (!token)
         throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
+}
+
+FireEagle::FireEagle(FireEagleConfig *_config) {
+    if (!_config)
+        throw new FireEagleException("NULL pointer for FireEagleConfig", FE_INTERNAL_ERROR);
+    config = _config;
     token = NULL;
-    if (_oAuthToken.length() && _oAuthTokenSecret.length()) {
-        token = new OAuthTokenPair(_oAuthToken, _oAuthTokenSecret);
+    if (config->get_general_token()) {
+        //There exists a general token. Use that as the oauth token...
+        token = new OAuthTokenPair(*(config->get_general_token()));
         if (!token)
             throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
     }
 }
 
 FireEagle::~FireEagle() {
-    if (consumer)
-        delete consumer;
     if (token)
         delete token;
 }
 
 FireEagle::FireEagle(const FireEagle &other) {
-    consumer = new OAuthTokenPair(*(other.consumer));
-    if (!consumer)
-        throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
+    config = other.config;
     if (other.token) {
         token = new OAuthTokenPair(*(other.token));
         if (!token)
@@ -339,14 +485,10 @@ FireEagle::FireEagle(const FireEagle &other) {
 }
 
 FireEagle &FireEagle::operator=(const FireEagle &other) {
-    if (consumer)
-        delete consumer;
+    config = other.config;
     if (token)
         delete token;
 
-    consumer = new OAuthTokenPair(*(other.consumer));
-    if (!consumer)
-        throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
     if (other.token) {
         token = new OAuthTokenPair(*(other.token));
         if (!token)
@@ -403,7 +545,7 @@ OAuthTokenPair FireEagle::getRequestToken() {
             throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
     }
 
-    if (FireEagle::FE_DUMP_REQUESTS) {
+    if (config->FE_DUMP_REQUESTS) {
         ostringstream os;
         os << "Now the user is redirected to " << getAuthorizeURL(oauth) << endl;
         os << "Once the user returns, via the callback URL for web authentication or manually for desktop authentication, we can get their access token and secret by calling /oauth/access_token." << endl;

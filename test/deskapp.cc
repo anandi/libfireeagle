@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <stdlib.h>
+#include <assert.h>
 #include "fireeagle.h"
 
 #include <curl/curl.h>
@@ -41,22 +42,24 @@ class MyFireEagle : public FireEagle {
     }
 
   public:
-    MyFireEagle(const string &_consumerKey, const string &_consumerSecret,
-                const string &_oAuthToken = "", const string &_oAuthTokenSecret = "")
-        : FireEagle(_consumerKey, _consumerSecret, _oAuthToken, _oAuthTokenSecret) {}
+    MyFireEagle(FireEagleConfig *_config, const OAuthTokenPair &_token)
+        : FireEagle(_config, _token) {}
+    MyFireEagle(FireEagleConfig *_config) : FireEagle(_config) {}
 };
 
 void usage() {
     cout << "Arguments (common):" << endl;
     cout << "\t--help (Shows this help)" << endl;
     cout << "\t--app-token-file <file> Mandatory arg. (You can set the FE_APPTOKEN environment instead)" << endl;
-    cout << "\t--token-file <file> Optional. Alternative is --token" << endl;
-    cout << "\t--token <token> <secret> Optional. Alternative is --token-file" << endl;
+    cout << "\t--general-token-file <file> General token for within and recent queries" << endl;
+    cout << "\t--token-file <file> Request or Access token as needed for operation." << endl;
+    cout << "\t--token <token> <secret> Request or Access token as needed for operation. Overrides --token-file" << endl;
     cout << "\t--out-token <file> Optional. Use with commands that generate request or access tokens to save to file." << endl;
     cout << "\t--json Optional with some commands. Returns the data for the API calls as JSON." << endl;
-    cout << "\t--fe-root <base URL> Point to the Fire Eagle installation [" << FireEagle::FE_ROOT << "]" << endl;
-    cout << "\t--debug Enable verbose output" << endl;
+    cout << "\t--fe-root <base URL> Point to the Fire Eagle installation [" << endl;     cout << "\t--debug Enable verbose output" << endl;
     cout << "\t--https-noverify Disable HTTPS peer verification" << endl;
+    cout << "\t--save-fe-config <file> Save the Fire Eagle config to a file" << endl;
+    cout << "\t--fe-config <file> Load Fire Eagle config from a file. This avoids --app-token-file, --general-token, --fe-root" << endl;
     cout << "\nOAuth Commands: (use --token or --token-file where tokens are needed)" << endl;
     cout << "\t--get_request_tok" << endl;
     cout << "\t--get_authorize_url You can optionally specify a request token." << endl;
@@ -196,16 +199,6 @@ string recent(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
     return response;
 }
 
-OAuthTokenPair get_token(const string &file, const string &tok_str, const string &secret_str) {
-    //First check whether the token & secret has been passed along with the command arg...
-    //Even otherwise, use empty strings if file is not specified. Don't throw exceptions.
-    if (((tok_str.length() > 0) && (secret_str.length() > 0)) || (file.length() == 0)) {
-        return OAuthTokenPair(tok_str, secret_str);
-    }
-
-    return OAuthTokenPair(file);
-}
-
 FE_ParamPairs get_args(int idx, int argc, char *argv[]) {
     //Parse the arguments...
     FE_ParamPairs args;
@@ -239,23 +232,49 @@ int main(int argc, char *argv[]) {
     }
 
     string app_tok_file;
+    string general_tok_file;
+    string fe_conf;
+    string save_fe_conf;
     string tok_file;
     string save_file;
     string token_str;
     string secret_str;
     bool json = false;
+    bool do_debug = false;
+    string base_url;
     int i = 0;
     int idx = -1; //Command.
     while (i < argc) {
         if (strcmp(argv[i], "--help") == 0) {
             usage();
             return 0;
+        } else if (strcmp(argv[i], "--fe-config") == 0) {
+            if (i == (argc - 1)) {
+                cerr << "Option --fe-config must be followed by a filename." << endl;
+                return 0;
+            }
+            fe_conf = string(argv[i + 1]);
+            i += 2;
+        } else if (strcmp(argv[i], "--save-fe-config") == 0) {
+            if (i == (argc - 1)) {
+                cerr << "Option --save-fe-config must be followed by a filename." << endl;
+                return 0;
+            }
+            save_fe_conf = string(argv[i + 1]);
+            i += 2;
         } else if (strcmp(argv[i], "--app-token-file") == 0) {
             if (i == (argc - 1)) {
                 cerr << "Option --app-token-file must be followed by a filename." << endl;
                 return 0;
             }
             app_tok_file.append(argv[i + 1]);
+            i += 2;
+        } else if (strcmp(argv[i], "--general-token-file") == 0) {
+            if (i == (argc - 1)) {
+                cerr << "Option --general-token-file must be followed by a filename." << endl;
+                return 0;
+            }
+            general_tok_file.append(argv[i + 1]);
             i += 2;
         } else if (strcmp(argv[i], "--token-file") == 0) {
             if (i == (argc - 1)) {
@@ -266,11 +285,11 @@ int main(int argc, char *argv[]) {
             i += 2;
         } else if (strcmp(argv[i], "--token") == 0) {
             if (i == (argc - 2)) {
-                cerr << "Option --token must be followed by the token and secret." << endl;
+                cerr << "Option --token must be followed by a token and a secret" << endl;
                 return 0;
             }
-            token_str.append(argv[i + 1]);
-            secret_str.append(argv[i + 1]);
+            token_str = string(argv[i + 1]);
+            secret_str = string(argv[i + 2]);
             i += 3;
         } else if (strcmp(argv[i], "--out-token") == 0) {
             if (i == (argc - 1)) {
@@ -281,18 +300,16 @@ int main(int argc, char *argv[]) {
             i += 2;
         } else if (strcmp(argv[i], "--fe-root") == 0) {
             if (i == (argc - 1)) {
-                cerr << "Option --out-token must be followed by a filename." << endl;
+                cerr << "Option --fe-root must be followed by a filename." << endl;
                 return 0;
             }
-            FireEagle::FE_ROOT = string(argv[i + 1]);
-            FireEagle::FE_API_ROOT = string(argv[i + 1]);
+            base_url = string(argv[i + 1]);
             i += 2;
         } else if (strcmp(argv[i], "--json") == 0) {
             json = true;
             i++;
         } else if (strcmp(argv[i], "--debug") == 0) {
-            FireEagle::FE_DUMP_REQUESTS = true;
-            FireEagle::FE_DEBUG = true;
+            do_debug = true;
             i++;
         } else if (strcmp(argv[i], "--https-noverify") == 0) {
             MyFireEagleCurlAgent::https_noverify = true;
@@ -310,30 +327,47 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    if (app_tok_file.length() == 0) {
-        //Check the environment...
-        char *file = getenv("FE_APPTOKEN");
-        if (file)
-            app_tok_file.append(file);
-        else {
+    FireEagleConfig *fe_config = NULL;
+    if (fe_conf.length() > 0) {
+        fe_config = new FireEagleConfig(fe_conf);
+    } else {
+        OAuthTokenPair consumer(app_tok_file);
+        if (!consumer.is_valid()) {
             cerr << "You must specify the app tokens to invoke this program." << endl;
             usage();
-            return 0;
         }
+        if (general_tok_file.length() > 0) {
+            OAuthTokenPair general_token(general_tok_file);
+            fe_config = new FireEagleConfig(consumer, general_token);
+        } else
+            fe_config = new FireEagleConfig(consumer);
     }
 
-    OAuthTokenPair consumer(app_tok_file);
-    OAuthTokenPair oauth_tok = get_token(tok_file, token_str, secret_str); //Can be general, request or
-                                                               //access token.
+    assert(fe_config);
+    fe_config->FE_DEBUG = do_debug;
+    fe_config->FE_DUMP_REQUESTS = do_debug;
+    if (base_url.length() > 0) {
+        fe_config->FE_ROOT = base_url;
+        fe_config->FE_API_ROOT = base_url;
+    }
+
+    if (save_fe_conf.length() > 0)
+        fe_config->save(save_fe_conf);
+
+    OAuthTokenPair oauth_tok("", ""); //Can be request or access token.
+    if ((token_str.length() > 0) && (secret_str.length() > 0))
+        oauth_tok = OAuthTokenPair(token_str, secret_str);
+    else if (tok_file.length() > 0)
+        oauth_tok = OAuthTokenPair(tok_file);
 
     try {
         if (strcmp(argv[idx], "--get_request_tok") == 0) {
-            MyFireEagle fe(consumer.token, consumer.secret);
+            MyFireEagle fe(fe_config);
             OAuthTokenPair tok = request_token(fe);
             if (save_file.length() > 0)
                 tok.save(save_file);
         } else if (strcmp(argv[idx], "--get_authorize_url") == 0) {
-            MyFireEagle fe(consumer.token, consumer.secret);
+            MyFireEagle fe(fe_config);
             if (oauth_tok.token.length() == 0) {
                 cout << "Generating request .... " << endl;
                 oauth_tok = request_token(fe);
@@ -342,27 +376,27 @@ int main(int argc, char *argv[]) {
             }
             authorize_url(fe, oauth_tok);
         } else if (strcmp(argv[idx], "--get_access_token") == 0) {
-            if (oauth_tok.token.length() == 0) {
+            if (!oauth_tok.is_valid()) {
                 cout << "You must provide the request token and secret. Run with --get_authorize_url to generate the tokens and to access the generated URL before this step" << endl;
                 return 0;
             }
-            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(fe_config, oauth_tok);
             OAuthTokenPair access = access_token(fe);
             if (save_file.length() > 0)
                 access.save(save_file);
         } else if (strcmp(argv[idx], "--get_location") == 0) {
-            if (oauth_tok.token.length() == 0) {
+            if (!oauth_tok.is_valid()) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
-            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(fe_config, oauth_tok);
             location(fe, (json)? "json" : "");
         } else if (strcmp(argv[idx], "--lookup") == 0) {
-            if (oauth_tok.token.length() == 0) {
+            if (!oauth_tok.is_valid()) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
-            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(fe_config, oauth_tok);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
@@ -371,11 +405,11 @@ int main(int argc, char *argv[]) {
             }
             lookup(fe, args, (json) ? "json" : "");
         } else if (strcmp(argv[idx], "--update") == 0) {
-            if (oauth_tok.token.length() == 0) {
+            if (!oauth_tok.is_valid()) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
-            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(fe_config, oauth_tok);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
@@ -384,11 +418,11 @@ int main(int argc, char *argv[]) {
             }
             update(fe, args, (json) ? "json" : "");
         } else if (strcmp(argv[idx], "--within") == 0) {
-            if (oauth_tok.token.length() == 0) {
+            if (!fe_config->get_general_token()) {
                 cout << "You must provide the general token and secret." << endl;
                 return 0;
             }
-            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(fe_config);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
@@ -397,11 +431,11 @@ int main(int argc, char *argv[]) {
             }
             within(fe, args, (json) ? "json" : "");
         } else if (strcmp(argv[idx], "--recent") == 0) {
-            if (oauth_tok.token.length() == 0) {
+            if (!fe_config->get_general_token()) {
                 cout << "You must provide the general token and secret." << endl;
                 return 0;
             }
-            MyFireEagle fe(consumer.token, consumer.secret, oauth_tok.token, oauth_tok.secret);
+            MyFireEagle fe(fe_config);
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             recent(fe, args, (json) ? "json" : "");
