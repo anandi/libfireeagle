@@ -7,19 +7,22 @@ MAKE := make
 DOXYGEN := doxygen
 RMDIR := rm -Rf
 
-all: src doc test
+SUBDIRS = src test
 
-try:
-	echo $(HEADERS)
+.PHONY: subdirs $(SUBDIRS)
+
+all: subdirs doc
+
+subdirs: $(SUBDIRS)
+
+$(SUBDIRS):
+	$(MAKE) -C $@
 
 clean:
 	$(MAKE) -C test clean
 	$(MAKE) -C src clean
 	$(RMDIR) doc/
 	$(RM) doc.d
-
-src:
-	$(MAKE) -C src
 
 doc.d:
 	echo -n "doc: " > $@
@@ -29,6 +32,5 @@ doc:
 	doxygen
 
 test: src
-	$(MAKE) -C test
 
 include doc.d
