@@ -10,8 +10,13 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "fireeagle.h"
+#include "fire_objects.h"
+#include "expat_parser.h"
 
 #include <curl/curl.h>
+
+//Global to avoid having to pass this around.
+FireEagleConfig *fe_config = NULL;
 
 //Extend the default Curl HTTP Agent to handle HTTPS_noverify.
 class MyFireEagleCurlAgent : public FireEagleCurl {
@@ -138,7 +143,9 @@ string lookup(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
         cout << "Lookup response: " << response << endl;
     } else {
         try {
-            list<FE_location> locations = fe.lookup_objects(response);
+            list<FE_location> locations = FE_location::from_response(response,
+                                                                    FE_FORMAT_XML,
+                                                                    fe_config);
             list<FE_location>::iterator iter;
             for(iter = locations.begin() ; iter != locations.end() ; iter++)
                 iter->print(cout, 0);
@@ -224,6 +231,19 @@ FE_ParamPairs get_args(int idx, int argc, char *argv[]) {
 
     return args;
 }
+
+class XMLParserData : public ParserData {
+  public:
+    ~XMLParserData() {}
+
+    virtual enum FE_format lang() const { return FE_FORMAT_XML; }
+
+    /**
+     * Get an instance of the actual parser object.
+     * @return A pointer to a derived class for a FE_Parser
+     */
+    virtual FE_Parser *parser_instance() const { return new FE_XMLParser; }
+};
 
 int main(int argc, char *argv[]) {
     if (argc == 1) {
@@ -327,7 +347,6 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    FireEagleConfig *fe_config = NULL;
     if (fe_conf.length() > 0) {
         fe_config = new FireEagleConfig(fe_conf);
     } else {
@@ -353,6 +372,8 @@ int main(int argc, char *argv[]) {
 
     if (save_fe_conf.length() > 0)
         fe_config->save(save_fe_conf);
+
+    fe_config->register_parser("application/xml", new XMLParserData);
 
     OAuthTokenPair oauth_tok("", ""); //Can be request or access token.
     if ((token_str.length() > 0) && (secret_str.length() > 0))

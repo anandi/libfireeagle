@@ -5,7 +5,7 @@
 #
 LIBOAUTHDIR := $(HOME)/scratch/liboauth
 INCLUDE_DIRS := -I. -I../include -I$(LIBOAUTHDIR)/trunk/src
-SRC_CC := ./fireeagle.cc ./fire_objects.cc ./fire_parser.cc ./fireeagle_http.cc
+SRC_CC := ./fireeagle.cc ./fire_objects.cc ./fireeagle_http.cc ./expat_parser.cc
 OBJS := $(SRC_CC:.cc=.o)
 DEPS := $(SRC_CC:.cc=.d)
 CPP := g++

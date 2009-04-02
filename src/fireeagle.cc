@@ -19,7 +19,7 @@ extern "C" {
 
 #include "fireeagle.h"
 #include "fire_objects.h"
-#include "fire_parser.h"
+//#include "fire_parser.h"
 
 using namespace std;
 
@@ -204,7 +204,13 @@ FireEagleConfig::FireEagleConfig(const string &conf_file)
     }
 }
 
-FireEagleConfig::~FireEagleConfig() {} //Nothing much to do right now.
+FireEagleConfig::~FireEagleConfig() {
+    for (map<string,ParserData *>::iterator iter = parsers.begin() ;
+         iter != parsers.end() ; iter++) {
+        if (iter->second)
+            delete iter->second;
+    }
+}
 
 static void write_config(FILE *fp, const string &name, const string &value) {
     fprintf(fp, "%s:%s\n", name.c_str(), value.c_str());
@@ -231,6 +237,38 @@ void FireEagleConfig::save(const string &file) const {
     fclose(fp);
 }
 
+ParserData *FireEagleConfig::register_parser(const string &content_type,
+                                             ParserData *parser) {
+    ParserData *old = NULL;
+
+    map<string,ParserData *>::iterator iter = parsers.find(content_type);
+    if (iter != parsers.end())
+        old = iter->second;
+
+    parsers[content_type] = parser;
+
+    return old;
+}
+
+ParserData *FireEagleConfig::get_parser(const string &content_type) {
+    map<string,ParserData *>::iterator iter = parsers.find(content_type);
+
+    if (iter != parsers.end())
+        return iter->second;
+
+    return NULL;
+}
+
+ParserData *FireEagleConfig::get_parser(enum FE_format format) {
+    for (map<string,ParserData *>::iterator iter = parsers.begin() ;
+         iter != parsers.end() ; iter++) {
+        if (iter->second->lang() == format)
+            return iter->second;
+    }
+
+    return NULL;
+}
+
 const OAuthTokenPair *FireEagleConfig::get_consumer_key() const { return &app_token; }
 
 const OAuthTokenPair *FireEagleConfig::get_general_token() const {
@@ -239,34 +277,40 @@ const OAuthTokenPair *FireEagleConfig::get_general_token() const {
     return NULL;
 }
 
-static FEXMLNode *parseXMLMessage(const string &msg) {
-    FEXMLParser parser;
-
-    FEXMLNode *root = parser.parse(msg);
-    if (!root)
+static FE_ParsedNode *parseResponse(const string &resp, FE_Parser *parser) {
+    FE_ParsedNode *root = parser->parse(resp);
+    if (!root) {
+        delete parser; //This is a bad way of doing things!!
         throw new FireEagleException("Invalid XML error response from Fire Eagle",
-                                     FE_INTERNAL_ERROR, msg);
+                                     FE_INTERNAL_ERROR, resp);
+    }
 
     return root;
 }
 
-static bool isXMLErrorMsg(const FEXMLNode *root, const string &msg) {
-    if (root->element() != "rsp") {
+bool FE_isJSONErrorMsg(const FE_ParsedNode *root, const string &msg) {
+    throw new FireEagleException("Method FE_isJSONErrorMsg is not implemented yet",
+                                 FE_INTERNAL_ERROR, msg);
+}
+
+bool FE_isXMLErrorMsg(const FE_ParsedNode *root, const string &msg) {
+    if (root->name() != "rsp") {
         delete root;
         throw new FireEagleException("Unknown XML response format from Fire Eagle",
                                      FE_INTERNAL_ERROR, msg);
     }
 
-    if (root->attribute("stat") == "ok")
+    if (!(root->has_property("stat"))) {
+        delete root;
+        throw new FireEagleException("Unknown XML response format from Fire Eagle",
+                                     FE_INTERNAL_ERROR, msg);
+    }
+
+    if (root->get_string_property("stat") == "ok")
         return false;
 
-    if (root->attribute("stat") != "fail") {
-        delete root;
-        throw new FireEagleException("Unknown XML response format from Fire Eagle",
-                                     FE_INTERNAL_ERROR, msg);
-    }
-
-    if (root->child(0).element() != "err") {
+    list<const FE_ParsedNode *> children = root->get_children("err");
+    if (children.size() != 1) {
         delete root;
         throw new FireEagleException("Unknown XML response format from Fire Eagle",
                                      FE_INTERNAL_ERROR, msg);
@@ -275,13 +319,20 @@ static bool isXMLErrorMsg(const FEXMLNode *root, const string &msg) {
     return true;
 }
 
-static FireEagleException *exceptionFromXML(const FEXMLNode *root) {
+FireEagleException *FE_exceptionFromJSON(const FE_ParsedNode *root) {
+    throw new FireEagleException("Method FE_exceptionFromJSON is not implemented yet",
+                                 FE_INTERNAL_ERROR);
+}
+
+FireEagleException *FE_exceptionFromXML(const FE_ParsedNode *root) {
     //Ideally this is not the guy who is being forced to throw any exception
     //It is just a factory method.
     string message("Remote error: ");
-    message.append(root->child(0).attribute("msg"));
-    FireEagleException *e = new FireEagleException(message,
-                    strtol(root->child(0).attribute("code").c_str(), NULL, 0));
+    list<const FE_ParsedNode *> children = root->get_children("err");
+    const FE_ParsedNode *err = *(children.begin());
+    message.append(err->get_string_property("msg"));
+    long code = err->get_long_property("code");
+    FireEagleException *e = new FireEagleException(message, code);
 
     return e;
 }
@@ -335,15 +386,25 @@ string FireEagle::http(const string &url, const string postData) const {
     }
 
     if (responseCode != 200) {
-        if (contentType == "application/xml") { //Si Habla XML!!
-            FEXMLNode *root = parseXMLMessage(response);
-            if (isXMLErrorMsg(root, response)) {
-                FireEagleException *e = exceptionFromXML(root);
+        ParserData *parser_data = config->get_parser(contentType);
+        if (parser_data) {
+            FE_Parser *parser = parser_data->parser_instance();
+//        if (contentType == "application/xml") { //Si Habla XML!!
+            FE_ParsedNode *root = parseResponse(response, parser);
+            if ((parser_data->lang() == FE_FORMAT_XML)
+                && (FE_isXMLErrorMsg(root, response))) {
+                FireEagleException *e = FE_exceptionFromXML(root);
+                delete root;
+                throw e;
+            } else if ((parser_data->lang() == FE_FORMAT_JSON)
+                && (FE_isJSONErrorMsg(root, response))) {
+                FireEagleException *e = FE_exceptionFromJSON(root);
                 delete root;
                 throw e;
             } //Don't do an else part. Even if we get a valid response with a non
               //200 HTTP code, proceed.
             delete root;
+            delete parser;
         } else {
             ostringstream os;
             os << "Request to " << url << " failed: HTTP error " << responseCode;
@@ -599,26 +660,6 @@ string FireEagle::user(enum FE_format format) const {
     return call("user", empty_params, false, format);
 }
 
-extern FE_user userFactory(const FEXMLNode *root);
-
-FE_user FireEagle::user_object(const string &response, enum FE_format format) const {
-    FEXMLNode *root = parseXMLMessage(response);
-    if (isXMLErrorMsg(root, response)) {
-        FireEagleException *e = exceptionFromXML(root);
-        delete root;
-        throw e;
-    }
-
-    try {
-        FE_user user = userFactory(&(root->child(0)));
-        delete root;
-        return user;
-    } catch(FireEagleException *fex) {
-        delete root;
-        throw fex;
-    }
-}
-
 string FireEagle::update(const FE_ParamPairs &args, enum FE_format format) const {
     if (args.size() == 0)
         throw new FireEagleException("FireEagle::update() needs a location",
@@ -633,46 +674,12 @@ string FireEagle::lookup(const FE_ParamPairs &args, enum FE_format format) const
     return call("lookup", args, false, format);
 }
 
-extern list<FE_location> lookupFactory(const FEXMLNode *root);
-
-list<FE_location> FireEagle::lookup_objects(const string &response,
-                                            enum FE_format format) const {
-    FEXMLNode *root = parseXMLMessage(response);
-    if (isXMLErrorMsg(root, response)) {
-        FireEagleException *e = exceptionFromXML(root);
-        delete root;
-        throw e;
-    }
-
-    bool found = false;
-    for (int i = 0 ; i < root->child_count() ; i++) {
-        if (root->child(i).element() != "locations")
-            continue;
-        found = true;
-        try {
-            list<FE_location> locations = lookupFactory(&(root->child(i)));
-
-            return locations;
-        } catch(FireEagleException *fex) {
-            delete root;
-            throw fex;
-        }
-    }
-
-    delete root;
-    if (!found)
-        throw new FireEagleException("Unknown XML response format for lookup API: No locations element present",
-                                     FE_INTERNAL_ERROR, response);
-}
-
 string FireEagle::within(const FE_ParamPairs &args, enum FE_format format) const {
     if (args.size() == 0)
         throw new FireEagleException("FireEagle::within() needs a location",
                                      FE_LOCATION_REQUIRED);
     return call("within", args, false, format);
 }
-
-
 
 string FireEagle::recent(const FE_ParamPairs &args, enum FE_format format) const {
     //You can call without any args...

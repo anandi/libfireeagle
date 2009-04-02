@@ -10,7 +10,7 @@
 #include <limits.h>
 
 #include "fire_objects.h"
-#include "fire_parser.h"
+#include "expat_parser.h"
 #include "fireeagle.h"
 
 using namespace std;
@@ -155,15 +155,15 @@ static list<double> parseGeoStr(const string &s) {
     return items;
 }
 
-static FE_geometry geometryFactory(const FEXMLNode *root) { //Do not free up root!
+static FE_geometry geometryFactory(const FE_ParsedNode *root) { //Do not free up root!
                                                       //Expect the root to be a georss:<something>
-    if (root->element() == "georss:point") {
+    if (root->name() == "georss:point") {
         FEGeo_Point fpoint;
 
-        list<double> items = parseGeoStr(root->text());
+        list<double> items = parseGeoStr(root->get_string_property("text()"));
         if (items.size() != 2) {
             string message = "Invalid text for georss:point : ";
-            message.append(root->text());
+            message.append(root->get_string_property("text()"));
             throw new FireEagleException(message, FE_INTERNAL_ERROR);
         }
 
@@ -174,13 +174,13 @@ static FE_geometry geometryFactory(const FEXMLNode *root) { //Do not free up roo
         fpoint.longitude = *(iter);
 
         return fpoint;
-    } else if (root->element() == "georss:box") {
+    } else if (root->name() == "georss:box") {
         FEGeo_Box fbox;
 
-        list<double> items = parseGeoStr(root->text());
+        list<double> items = parseGeoStr(root->get_string_property("text()"));
         if (items.size() != 4) {
             string message = "Invalid text for georss:box : ";
-            message.append(root->text());
+            message.append(root->get_string_property("text()"));
             throw new FireEagleException(message, FE_INTERNAL_ERROR);
         }
 
@@ -201,87 +201,82 @@ static FE_geometry geometryFactory(const FEXMLNode *root) { //Do not free up roo
     } else {
         //Not handling georss:polygon right now!
         string message("Unhandled geometry: ");
-        message.append(root->element());
+        message.append(root->name());
         throw new FireEagleException(message, FE_INTERNAL_ERROR);
     }
 }
 
-static FE_location locationFactory(const FEXMLNode *root) {//Do not free root!
-    if (root->element() != "location") {
+static FE_location locationFactory(const FE_ParsedNode *root) {//Do not free root!
+    if (root->name() != "location") {
         //Not handling georss:polygon right now!
         string message("Expected element = location. Got: ");
-        message.append(root->element());
+        message.append(root->name());
         throw new FireEagleException(message, FE_INTERNAL_ERROR);
     }
 
     FE_location location;
     int nchildren = root->child_count();
     for (int i = 0 ; i < nchildren ; i++) {
-        const FEXMLNode &child = root->child(i);
+        const FE_ParsedNode &child = root->child(i);
 
-        if (child.element() == "label")
-            location.label = child.text();
-        else if (child.element() == "level")
-            location.level = strtoul(child.text().c_str(), NULL, 10);
-        else if (child.element() == "level-name")
-            location.level_name = child.text();
-        else if (child.element().substr(0, 7) == "georss:")
+        if (child.name() == "label")
+            location.label = child.get_string_property("text()");
+        else if (child.name() == "level")
+            location.level = (unsigned long) child.get_long_property("text()");
+        else if (child.name() == "level-name")
+            location.level_name = child.get_string_property("text()");
+        else if (child.name().substr(0, 7) == "georss:")
             location.geometry = geometryFactory(&child);
-        else if (child.element() == "located-at")
-            location.timestamp = child.text();
-        else if (child.element() == "name")
-            location.full_location = child.text();
-        else if (child.element() == "normal-name")
-            location.place_name = child.text();
-        else if (child.element() == "place-id") {
-            location.place_id = child.text();
-            if (child.attribute("exact-match") == "true")
-                location.is_place_id_exact = true;
-        } else if (child.element() == "woeid") {
-            location.woeid = strtoul(child.text().c_str(), NULL, 10);
-            if (child.attribute("exact-match") == "true")
-                location.is_woeid_exact = true;
+        else if (child.name() == "located-at")
+            location.timestamp = child.get_string_property("text()");
+        else if (child.name() == "name")
+            location.full_location = child.get_string_property("text()");
+        else if (child.name() == "normal-name")
+            location.place_name = child.get_string_property("text()");
+        else if (child.name() == "place-id") {
+            location.place_id = child.get_string_property("text()");
+            location.is_place_id_exact = child.get_bool_property("exact-match");
+        } else if (child.name() == "woeid") {
+            location.woeid = (unsigned long) child.get_long_property("text()");
+            location.is_woeid_exact = child.get_bool_property("exact-match");
         }
     }
 
-    if (root->attribute("best-guess") == "true")
-        location.best_guess = true;
+    location.best_guess = root->get_bool_property("best-guess");
 
     return location;
 }
 
-FE_user userFactory(const FEXMLNode *root) {//Do not free root!
-    if (root->element() != "user") {
+FE_user userFactory(const FE_ParsedNode *root) {//Do not free root!
+    if (root->name() != "user") {
         //Not handling georss:polygon right now!
         string message("Expected element = user. Got: ");
-        message.append(root->element());
+        message.append(root->name());
         throw new FireEagleException(message, FE_INTERNAL_ERROR);
     }
 
     FE_user user;
     int nchildren = root->child_count();
-    if (root->attribute("located-at").length() > 0)
-        user.last_update_timestamp = root->attribute("located-at");
-    if (root->attribute("readable") == "true")
-        user.can_read = true;
-    if (root->attribute("writable") == "true")
-        user.can_write = true;
-    if (root->attribute("token").length() > 0)
-        user.token = root->attribute("token");
+    if (root->has_property("located-at"))
+        user.last_update_timestamp = root->get_string_property("located-at");
+    user.can_read = root->get_bool_property("readable");
+    user.can_write = root->get_bool_property("writable");
+    if (root->has_property("token"))
+        user.token = root->get_string_property("token");
     
     for (int i = 0 ; i < nchildren ; i++) {
-        const FEXMLNode &child = root->child(i);
+        const FE_ParsedNode &child = root->child(i);
 
-        if (child.element() != "location-hierarchy")
+        if (child.name() != "location-hierarchy")
             continue;
 
-        user.woeid_hierarchy = child.attribute("string");
-        user.timezone = child.attribute("timezone");
+        user.woeid_hierarchy = child.get_string_property("string");
+        user.timezone = child.get_string_property("timezone");
 
         int grandchildren = child.child_count();
         for (int j = 0 ; j < grandchildren ; j++) {
-            const FEXMLNode &gchild = child.child(j);
-            if (gchild.element() == "location")
+            const FE_ParsedNode &gchild = child.child(j);
+            if (gchild.name() == "location")
                 user.location.push_back(locationFactory(&gchild));
         }
     }
@@ -289,12 +284,73 @@ FE_user userFactory(const FEXMLNode *root) {//Do not free root!
     return user;
 }
 
-list<FE_location> lookupFactory(const FEXMLNode *root) {//Do not free root!
+extern bool FE_isXMLErrorMsg(const FE_ParsedNode *root, const string &msg);
+extern FireEagleException *FE_exceptionFromXML(const FE_ParsedNode *root);
+extern bool FE_isJSONErrorMsg(const FE_ParsedNode *root, const string &msg);
+extern FireEagleException *FE_exceptionFromJSON(const FE_ParsedNode *root);
+
+FE_user FE_user::from_response(const string &resp, enum FE_format format,
+                               FireEagleConfig *config) {
+    if (format == FE_FORMAT_JSON) {
+        throw new FireEagleException("FE_user::from_response is not implemented for JSON",
+                                     FE_INTERNAL_ERROR, resp);
+    }
+
+    ParserData *parser_data = config->get_parser(format);
+    if (!parser_data) {
+        ostringstream os;
+
+        os << "Cannot parse response to make a user object.";
+        os << " No registered handler for requested format.";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR, resp);
+    }
+
+    FE_Parser *parser = parser_data->parser_instance();
+    FE_ParsedNode *root = parser->parse(resp);
+    if (!root) {
+        delete parser;
+        throw FireEagleException("Parse failed for response", FE_INTERNAL_ERROR, resp);
+    }
+
+    //OK, we parsed. But, is this a valid response?
+    if ((format == FE_FORMAT_XML) && FE_isXMLErrorMsg(root, resp)) {
+        FireEagleException *e = FE_exceptionFromXML(root);
+        delete parser;
+        delete root;
+        throw e;
+    } else if ((format == FE_FORMAT_JSON) && FE_isJSONErrorMsg(root, resp)) {
+        FireEagleException *e = FE_exceptionFromJSON(root);
+        delete parser;
+        delete root;
+        throw e;
+    }
+
+    try {
+        FE_user user;
+        if (format == FE_FORMAT_XML) {
+            user = userFactory(&(root->child(0)));
+        } else if (format == FE_FORMAT_JSON) {
+            delete root;
+            delete parser;
+            throw new FireEagleException("FE_user::from_response is not implemented for JSON",
+                                         FE_INTERNAL_ERROR, resp);
+        }
+        delete root;
+        delete parser;
+        return user;
+    } catch(FireEagleException *fex) {
+        delete root;
+        delete parser;
+        throw fex;
+    }    
+}
+
+list<FE_location> lookupFactory(const FE_ParsedNode *root) {//Do not free root!
     list<FE_location> locations;
 
-    if (root->element() != "locations") {
+    if (root->name() != "locations") {
         string message("Expected element = locations. Got: ");
-        message.append(root->element());
+        message.append(root->name());
         throw new FireEagleException(message, FE_INTERNAL_ERROR);
     }
 
@@ -305,52 +361,72 @@ list<FE_location> lookupFactory(const FEXMLNode *root) {//Do not free root!
     return locations;
 }
 
+list<FE_location> FE_location::from_response(const string &resp,
+                                             enum FE_format format, 
+                                             FireEagleConfig *config) {
+    if (format == FE_FORMAT_JSON) {
+        throw new FireEagleException("FE_location::from_response is not implemented for JSON",
+                                     FE_INTERNAL_ERROR, resp);
+    }
+
+    ParserData *parser_data = config->get_parser(format);
+    if (!parser_data) {
+        ostringstream os;
+
+        os << "Cannot parse response to make location objects.";
+        os << " No registered handler for requested format";
+        throw new FireEagleException(os.str(), FE_INTERNAL_ERROR, resp);
+    }
+
+    FE_Parser *parser = parser_data->parser_instance();
+    FE_ParsedNode *root = parser->parse(resp);
+    if (!root) {
+        delete parser;
+        throw FireEagleException("Parse failed for response", FE_INTERNAL_ERROR, resp);
+    }
+
+    //OK, we parsed. But, is this a valid response?
+    if ((format == FE_FORMAT_XML) && FE_isXMLErrorMsg(root, resp)) {
+        FireEagleException *e = FE_exceptionFromXML(root);
+        delete parser;
+        delete root;
+        throw e;
+    } else if ((format == FE_FORMAT_JSON) && FE_isJSONErrorMsg(root, resp)) {
+        FireEagleException *e = FE_exceptionFromJSON(root);
+        delete parser;
+        delete root;
+        throw e;
+    }
 
 
+    bool found = false;
+    for (int i = 0 ; i < root->child_count() ; i++) {
+        if (root->child(i).name() != "locations")
+            continue;
+        found = true;
+        try {
+            if (format == FE_FORMAT_XML) {
+                list<FE_location> locations = lookupFactory(&(root->child(i)));
+                delete root;
+                delete parser;
+                return locations;
+            } else if (format == FE_FORMAT_JSON) {
+                delete root;
+                delete parser;
+                throw new FireEagleException("FE_user::from_response is not implemented for JSON",
+                                             FE_INTERNAL_ERROR, resp);
+            }
+        } catch(FireEagleException *fex) {
+            delete root;
+            delete parser;
+            throw fex;
+        }
+    }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    delete root;
+    delete parser;
+    if (!found)
+        throw new FireEagleException("Unknown XML response format for lookup API: No locations element present",
+                                     FE_INTERNAL_ERROR, resp);
+}
 

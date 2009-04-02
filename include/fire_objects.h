@@ -4,6 +4,8 @@
 #include <string>
 #include <list>
 
+#include "fireeagle.h" //For FireEagleConfig
+
 using namespace std;
 
 /**
@@ -121,6 +123,18 @@ class FE_location {
      * @param indent Indentation level. Used for pretty printing.
      */
     virtual void print(ostream &os, unsigned int indent = 0) const;
+
+    /** Factory method to parse API responses according to content type. Throws
+     * exception if the content_type is not handled in config.
+     * @param resp The actual response body to be parsed.
+     * @param content_type The content type of the response.
+     * @param config Pointer to the FireEagleConfig with which the parsers are
+     * registered.
+     * @return list of valid instances.
+     */
+    static list<FE_location> from_response(const string &resp,
+                                           enum FE_format format, 
+                                           FireEagleConfig *config);
 };
 
 /** Class representing a parsed response from the 'user' APi of Fire Eagle.
@@ -158,6 +172,17 @@ class FE_user {
      * @param indent Indentation level. Used for pretty printing.
      */
     virtual void print(ostream &os, unsigned int indent = 0) const;
+
+    /** Factory method to parse API responses according to format. Throws
+     * exception if the config does not have a parser for the format.
+     * @param resp The actual response body to be parsed.
+     * @param format The response format.
+     * @param config Pointer to the FireEagleConfig with which the parsers are
+     * registered.
+     * @return Valid instance.
+     */
+    static FE_user from_response(const string &resp, enum FE_format format, 
+                                 FireEagleConfig *config);
 };
 
 #endif //FIRE_OBJECTS_H

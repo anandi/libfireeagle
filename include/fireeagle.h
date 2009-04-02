@@ -12,8 +12,8 @@
 #include <exception>
 #include <map>
 
-#include "fire_objects.h"
 #include "fireeagle_http.h"
+#include "parser_iface.h"
 
 using namespace std;
 
@@ -169,6 +169,27 @@ class OAuthTokenPair {
 enum FE_format { FE_FORMAT_XML = 1, FE_FORMAT_JSON };
 
 /**
+ * A class to be used to store a particular parser. I *AM* making things fancy here!
+ */
+class ParserData {
+  public:
+    /** Destructor of abstract classes are virtual. */
+    virtual ~ParserData() {}
+
+    /**
+     * Retrieve the supported format for the parser.
+     * @return One of the supported response type.
+     */
+    virtual enum FE_format lang() const = 0;
+
+    /**
+     * Get an instance of the actual parser object.
+     * @return A pointer to a derived class for a FE_Parser
+     */
+    virtual FE_Parser *parser_instance() const = 0;
+};
+
+/**
  * A class for storing the FireEagle common stuff that applies across the
  * application. Normally we would expect this to be a singleton, but I am
  * refraining from making it so, just in case someone has more than one
@@ -185,6 +206,9 @@ class FireEagleConfig {
 
     /** Common initialization function */
     void common_init();
+
+    /** Map for parsers of different response content types. */
+    map<string,ParserData *> parsers;
 
   public:
     /** Contains the root URL for Fire Eagle installation. Should be possible to
@@ -227,6 +251,30 @@ class FireEagleConfig {
      * @return Returns NULL if the general token is invalid.
      */
     const OAuthTokenPair *get_general_token() const;
+
+    /** Add new parsers based on response content types.
+     * @param content_type The content type which will be parsed using this parser.
+     * @param parser Pointer to an instance of a derived class of ParserData.
+     * @return A pointer to any previous instance registered with the same content_type,
+     * or NULL o/w.
+     */
+    ParserData *register_parser(const string &content_type, ParserData *parser);
+
+    /** Find a parser (if registered) for the given content type
+     * @param content_type The content type which needs to be handled.
+     * @return A registered instance (see FireEagleConfig::register_parser) of
+     * ParserData for desired content_type or NULL o/w
+     */
+    ParserData *get_parser(const string &content_type);
+
+    /** Find a parser (if registered) for a given response format.
+     * @param format The choice of format.
+     * @return A registered instance (see FireEagleConfig::register_parser) of
+     * ParserData for the desired format. If multiple parsers (for different
+     * content types) are registered for the same format, it returns a random
+     * one of the matches.
+     */
+    ParserData *get_parser(enum FE_format format);
 };
 
 /**
@@ -367,14 +415,6 @@ class FireEagle {
      */
     string user(enum FE_format format = FE_FORMAT_XML) const;
 
-    /** Helper method to make a parsed object from the response received from
-     * 'user' method. Currently supports on XML parsing.
-     * @param response String returned by call to FireEagle::user method.
-     * @param format Enum to specify the response format (XML by default).
-     * @return An instance of FE_user.
-     */
-    FE_user user_object(const string &response, enum FE_format format = FE_FORMAT_XML) const;
-
     /** The 'update' API call. Uses the token in 'this' as the access token.
      * See http://fireeagle.yahoo.net/developer/explorer for more details on
      * individual APIs and parameters.
@@ -392,18 +432,6 @@ class FireEagle {
      * @return HTTP response in the format requested.
      */
     string lookup(const FE_ParamPairs &args, enum FE_format format = FE_FORMAT_XML) const;
-
-    /** Helper method to make a parsed object from the response received from
-     * 'lookup' method. Currently supports on XML parsing.
-     * @param response String returned by call to FireEagle::lookup method.
-     * @param format Enum to specify the response format (XML by default).
-     * @return A list of FE_location as a list of potential location(s) that the
-     * arguments of the FireEagle::lookup call geo-coded to. If there are more than
-     * one, it is the responsibility of the caller to get it disambiguated when
-     * making a FireEagle::update call.
-     */
-    list<FE_location> lookup_objects(const string &response,
-                                     enum FE_format format = FE_FORMAT_XML) const;
 
     /** The 'within' API call. Uses the token in 'this' as the general token.
      * Note that this API is available to only consumer keys that have a
