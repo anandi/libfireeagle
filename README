@@ -14,8 +14,7 @@ Please report bugs to arnob.nandi@gmail.com
 
 The details below should mostly work on all *nix systems. I have only tested
 on Fedora Core 9 and RHEL 4 using curl-devel 7.18.1, expat-devel 2.0.1 and
-liboauth 0.4.5. (On a side note, libfireeagle does not have a version as of
-now... see TODOs)
+liboauth 0.4.5.
 
 Do not ask me about Windows or other systems right now. If you can get it to
 work on one, please let me know the changes, I will be happy to merge it in
@@ -35,11 +34,13 @@ documentation should be available in doc/html
 
 TEST:
 There is a Makeile in the test directory. This builds test/deskapp. Please
-run test/deskapp --help to see different options.
+run test/deskapp --help to see different options.  I have also added a
+test/test_deskapp.sh (TBD: Document the usage) that you should be able to run
+directly as:
+'$ export FE_TEST_APP_TOKEN=<your token file>; test/test_deskapp.sh phase[1-4]'
 
 INSTALL:
-This is a manual process as of now. Copy the files in include to where your
-standard 3rd party headers reside. Copy libfireeagle.so to where your
-liboauth.so is.
+Run 'sudo make install'. This should make the files appear in /usr/local/include
+/usr/local/lib and /usr/share/doc
 
 Have fun.
