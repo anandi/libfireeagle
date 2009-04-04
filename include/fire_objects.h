@@ -1,3 +1,10 @@
+/**
+ * FireEagle OAuth+API C++ bindings
+ *
+ * Copyright (C) 2009 Yahoo! Inc
+ *
+ */
+
 #ifndef FIRE_OBJECTS_H
 #define FIRE_OBJECTS_H
 
