@@ -38,18 +38,49 @@ class MyFireEagleCurlAgent : public FireEagleCurl {
 
 bool MyFireEagleCurlAgent::https_noverify = false;
 
+/*
+ * Ummm... why exactly did we need this class? Oh yes... we wanted to print the
+ * actual HTTP(S) request to be made, without actually making it. Why not use
+ * --debug instead?? Because, it does not stop the request from being made. Once
+ *  the request is made, the nonce is registered at the server side, so the
+ *  output cannot be used to fire again. Hence this new class.
+ */
+class HTTPRequestPrinter : public FireEagleHTTPAgent {
+  public:
+    HTTPRequestPrinter(const string&_url, const string &_postdata)
+        : FireEagleHTTPAgent(_url, _postdata) {}
+    ~HTTPRequestPrinter() {}
+
+    void initialize_agent() {}
+    int make_call() {
+        cout << "Request URL: " << url << endl;
+        if (postdata.length() > 0)
+            cout << "Post Body: " << postdata << endl;
+        return 0; /* Internal agent error ;) */
+    }
+    string get_response() { return ""; }
+    string get_header(const string &header) { return ""; }
+    void destroy_agent() {}
+};
+
 //Extended to use a different HTTP agent (actuall different agent settings)
 class MyFireEagle : public FireEagle {
+  public:
+    bool dummy_request; /* Set this to true so that no actual request happens */
+
   protected:
     FireEagleHTTPAgent *HTTPAgent(const string &url,
                                   const string &postdata) const {
-        return new MyFireEagleCurlAgent(url, postdata);
+        FireEagleHTTPAgent *pAgent = NULL;
+        pAgent = (dummy_request) ? (FireEagleHTTPAgent *) new HTTPRequestPrinter(url, postdata)
+                                 : (FireEagleHTTPAgent *) new MyFireEagleCurlAgent(url, postdata);
+        return pAgent;
     }
 
   public:
     MyFireEagle(FireEagleConfig *_config, const OAuthTokenPair &_token)
-        : FireEagle(_config, _token) {}
-    MyFireEagle(FireEagleConfig *_config) : FireEagle(_config) {}
+        : FireEagle(_config, _token) { dummy_request = false; }
+    MyFireEagle(FireEagleConfig *_config) : FireEagle(_config) { dummy_request = false; }
 };
 
 void usage() {
@@ -60,11 +91,12 @@ void usage() {
     cout << "\t--token-file <file> Request or Access token as needed for operation." << endl;
     cout << "\t--token <token> <secret> Request or Access token as needed for operation. Overrides --token-file" << endl;
     cout << "\t--out-token <file> Optional. Use with commands that generate request or access tokens to save to file." << endl;
-    cout << "\t--json Optional with some commands. Returns the data for the API calls as JSON." << endl;
+    cout << "\t--format [json|xml|html] Default xml. Use html only with --fake-request." << endl;
     cout << "\t--fe-root <base URL> Point to the Fire Eagle installation [" << endl;     cout << "\t--debug Enable verbose output" << endl;
     cout << "\t--https-noverify Disable HTTPS peer verification" << endl;
     cout << "\t--save-fe-config <file> Save the Fire Eagle config to a file" << endl;
     cout << "\t--fe-config <file> Load Fire Eagle config from a file. This avoids --app-token-file, --general-token, --fe-root" << endl;
+    cout << "\t--fake-request Do not make actual request. Dump the possible request to stout." << endl;
     cout << "\nOAuth Commands: (use --token or --token-file where tokens are needed)" << endl;
     cout << "\t--get_request_tok" << endl;
     cout << "\t--get_authorize_url You can optionally specify a request token." << endl;
@@ -102,16 +134,8 @@ OAuthTokenPair access_token(FireEagle &fe) {
     return accessTok;
 }
 
-string location(FireEagle &fe, const string &format) {
-    string response;
-    if (format == "json") {
-        response = fe.user(FE_FORMAT_JSON);
-    } else if ((format == "xml") || (format == "")) {
-        response = fe.user();
-    } else {
-        cout << "Invalid format specified. Reverting to default XML..." << endl;
-        response = fe.user();
-    }
+string location(FireEagle &fe, enum FE_format format) {
+    string response = fe.user(format);
 
 //    if (format == "json") {
         cout << "Location Response: " << response << endl;
@@ -127,19 +151,10 @@ string location(FireEagle &fe, const string &format) {
     return response;
 }
 
-string lookup(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
-    string response;
-    if (format == "json") {
-        response = fe.lookup(args, FE_FORMAT_JSON);
-    } else if ((format == "xml") || (format == "")) {
-        response = fe.lookup(args);
-    } else {
-        cout << "Invalid format specified. Reverting to default XML..." << endl;
-        response = fe.lookup(args);
-    }
+string lookup(FireEagle &fe, const FE_ParamPairs &args, enum FE_format format) {
+    string response = fe.lookup(args, format);
 
-
-    if (format == "json") {
+    if (format == FE_FORMAT_JSON) {
         cout << "Lookup response: " << response << endl;
     } else {
         try {
@@ -157,50 +172,22 @@ string lookup(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
     return response;
 }
 
-string update(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
-    string response;
-    if (format == "json") {
-        response = fe.update(args, FE_FORMAT_JSON);
-    } else if ((format == "xml") || (format == "")) {
-        response = fe.update(args);
-    } else {
-        cout << "Invalid format specified. Reverting to default XML..." << endl;
-        response = fe.update(args);
-    }
-
+string update(FireEagle &fe, const FE_ParamPairs &args, enum FE_format format) {
+    string response = fe.update(args, format);
     cout << "Update response: " << response << endl;
 
     return response;
 }
 
-string within(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
-    string response;
-    if (format == "json") {
-        response = fe.within(args, FE_FORMAT_JSON);
-    } else if ((format == "xml") || (format == "")) {
-        response = fe.within(args);
-    } else {
-        cout << "Invalid format specified. Reverting to default XML..." << endl;
-        response = fe.within(args);
-    }
-
+string within(FireEagle &fe, const FE_ParamPairs &args, enum FE_format format) {
+    string response = fe.within(args, format);
     cout << "Within response: " << response << endl;
 
     return response;
 }
 
-string recent(FireEagle &fe, const FE_ParamPairs &args, const string &format) {
-    string response;
-
-    if (format == "json") {
-        response = fe.recent(args, FE_FORMAT_JSON);
-    } else if ((format == "xml") || (format == "")) {
-        response = fe.recent(args);
-    } else {
-        cout << "Invalid format specified. Reverting to default XML..." << endl;
-        response = fe.recent(args);
-    }
-
+string recent(FireEagle &fe, const FE_ParamPairs &args, enum FE_format format) {
+    string response = fe.recent(args, format);
     cout << "Recent response: " << response << endl;
 
     return response;
@@ -259,15 +246,19 @@ int main(int argc, char *argv[]) {
     string save_file;
     string token_str;
     string secret_str;
-    bool json = false;
+    enum FE_format format = FE_FORMAT_XML;
     bool do_debug = false;
     string base_url;
-    int i = 0;
+    int i = 1;
     int idx = -1; //Command.
+    bool make_request = true;
     while (i < argc) {
         if (strcmp(argv[i], "--help") == 0) {
             usage();
             return 0;
+        } else if (strcmp(argv[i], "--fake-request") == 0) {
+            make_request = false;
+            i++;
         } else if (strcmp(argv[i], "--fe-config") == 0) {
             if (i == (argc - 1)) {
                 cerr << "Option --fe-config must be followed by a filename." << endl;
@@ -325,9 +316,22 @@ int main(int argc, char *argv[]) {
             }
             base_url = string(argv[i + 1]);
             i += 2;
-        } else if (strcmp(argv[i], "--json") == 0) {
-            json = true;
-            i++;
+        } else if (strcmp(argv[i], "--format") == 0) {
+            if (i == (argc - 1)) {
+                cerr << "Option --format must be followed by a valid format." << endl;
+                return 0;
+            }
+            if (strcmp(argv[i + 1], "xml") == 0)
+                format = FE_FORMAT_XML;
+            else if (strcmp(argv[i + 1], "json") == 0)
+                format = FE_FORMAT_JSON;
+            else if (strcmp(argv[i + 1], "html") == 0)
+                format = FE_FORMAT_HTML;
+            else {
+                cerr << argv[i + 1] << "is not a valid value for --format." << endl;
+                return 0;
+            }
+            i += 2;
         } else if (strcmp(argv[i], "--debug") == 0) {
             do_debug = true;
             i++;
@@ -381,14 +385,21 @@ int main(int argc, char *argv[]) {
     else if (tok_file.length() > 0)
         oauth_tok = OAuthTokenPair(tok_file);
 
+    if (make_request && (format == FE_FORMAT_HTML)) {
+        cerr << "HTML is not an actually supported API response format for actual requests" << endl;
+        return 0;
+    }
+
     try {
         if (strcmp(argv[idx], "--get_request_tok") == 0) {
             MyFireEagle fe(fe_config);
+            fe.dummy_request = !make_request;
             OAuthTokenPair tok = request_token(fe);
             if (save_file.length() > 0)
                 tok.save(save_file);
         } else if (strcmp(argv[idx], "--get_authorize_url") == 0) {
             MyFireEagle fe(fe_config);
+            fe.dummy_request = !make_request;
             if (oauth_tok.token.length() == 0) {
                 cout << "Generating request .... " << endl;
                 oauth_tok = request_token(fe);
@@ -402,6 +413,7 @@ int main(int argc, char *argv[]) {
                 return 0;
             }
             MyFireEagle fe(fe_config, oauth_tok);
+            fe.dummy_request = !make_request;
             OAuthTokenPair access = access_token(fe);
             if (save_file.length() > 0)
                 access.save(save_file);
@@ -411,55 +423,60 @@ int main(int argc, char *argv[]) {
                 return 0;
             }
             MyFireEagle fe(fe_config, oauth_tok);
-            location(fe, (json)? "json" : "");
+            fe.dummy_request = !make_request;
+            location(fe, format);
         } else if (strcmp(argv[idx], "--lookup") == 0) {
             if (!oauth_tok.is_valid()) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
             MyFireEagle fe(fe_config, oauth_tok);
+            fe.dummy_request = !make_request;
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
                 cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
             }
-            lookup(fe, args, (json) ? "json" : "");
+            lookup(fe, args, format);
         } else if (strcmp(argv[idx], "--update") == 0) {
             if (!oauth_tok.is_valid()) {
                 cout << "You must provide the access token and secret. Run with --get_access_token to generate the tokens before this step" << endl;
                 return 0;
             }
             MyFireEagle fe(fe_config, oauth_tok);
+            fe.dummy_request = !make_request;
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
                 cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
             }
-            update(fe, args, (json) ? "json" : "");
+            update(fe, args, format);
         } else if (strcmp(argv[idx], "--within") == 0) {
             if (!fe_config->get_general_token()) {
                 cout << "You must provide the general token and secret." << endl;
                 return 0;
             }
             MyFireEagle fe(fe_config);
+            fe.dummy_request = !make_request;
 
             FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
                 cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
             }
-            within(fe, args, (json) ? "json" : "");
+            within(fe, args, format);
         } else if (strcmp(argv[idx], "--recent") == 0) {
             if (!fe_config->get_general_token()) {
                 cout << "You must provide the general token and secret." << endl;
                 return 0;
             }
             MyFireEagle fe(fe_config);
+            fe.dummy_request = !make_request;
 
             FE_ParamPairs args = get_args(idx, argc, argv);
-            recent(fe, args, (json) ? "json" : "");
+            recent(fe, args, format);
         } else {
             usage();
         }

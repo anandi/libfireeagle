@@ -32,6 +32,8 @@ string FireEagleException::to_string() const {
     os << "FireEagleException (code: " << code << "): " << msg << endl;
     if (response.length())
         os << "Response is: " << response << endl;
+
+    return os.str();
 }
 
 FireEagleException::~FireEagleException() throw() {}
@@ -72,17 +74,23 @@ OAuthTokenPair::OAuthTokenPair(const string &file) {
     }
 }
 
-void OAuthTokenPair::init_from_string(const char *str) {
+void OAuthTokenPair::init_from_string(const char *stro) {
+    char *str = strdup(stro);
     char *pos = strchr(str, ' '); //Search for the separator whitespace.
-    if (!pos)
+    if (!pos) {
+        free(str);
         throw new FireEagleException("Invalid format", FE_INTERNAL_ERROR);
+    }
 
     *pos = 0; pos++;
-    if (!strlen(str) || !strlen(pos))
+    if (!strlen(str) || !strlen(pos)) {
+        free(str);
         throw new FireEagleException("Invalid format", FE_INTERNAL_ERROR);
+    }
 
     token = string(str);
     secret = string(pos);
+    free(str);
 }
 
 string OAuthTokenPair::to_string() const {
@@ -138,9 +146,8 @@ FireEagleConfig::FireEagleConfig(const OAuthTokenPair &_app_token,
     common_init();
 }
 
-FireEagleConfig::FireEagleConfig(const string &conf_file)
-    : app_token("",""), general_token("","") {
-    common_init();
+map<string,string> FireEagleConfig::parse_config(const string &conf_file) {
+    map<string,string> pairs;
 
     FILE *fp = fopen(conf_file.c_str(), "r");
     if (!fp) {
@@ -178,24 +185,65 @@ FireEagleConfig::FireEagleConfig(const string &conf_file)
         }
 
         *c = 0; c++; //Split into name and value
-        if (strcmp(buffer, "app_token_file") == 0) {
-            app_token = OAuthTokenPair(c);
-        } else if (strcmp(buffer, "app_token_data") == 0) {
-            app_token.init_from_string(c);
-        } else if (strcmp(buffer, "general_token_file") == 0) {
-            general_token = OAuthTokenPair(c);
-        } else if (strcmp(buffer, "general_token_data") == 0) {
-            general_token.init_from_string(c);
-        } else if (strcmp(buffer, "root_url") == 0) {
-            FE_ROOT = string(c);
-        } else if (strcmp(buffer, "api_base_url") == 0) {
-            FE_API_ROOT = string(c);
-        } else {
-            //No match. Ignore. We do not need to throw exceptions.
-            continue;
+        pairs[string(buffer)] = string(c);
+    }
+
+    fclose(fp);
+
+    return pairs;
+}
+
+void FireEagleConfig::common_init_with_config(const map<string,string> &config) {
+    map<string,string>::const_iterator iter;
+
+    iter = config.find("app_token_file");
+    if (iter != config.end()) {
+        app_token = OAuthTokenPair(iter->second);
+    } else {
+        //File for token is not specified.
+        iter = config.find("app_token_data");
+        if (iter != config.end()) {
+            app_token.init_from_string(iter->second.c_str());
         }
     }
-    fclose(fp);
+
+    iter = config.find("general_token_file");
+    if (iter != config.end()) {
+        general_token = OAuthTokenPair(iter->second);
+    } else {
+        //File for token is not specified.
+        iter = config.find("general_token_data");
+        if (iter != config.end()) {
+            general_token.init_from_string(iter->second.c_str());
+        }
+    }
+
+    iter = config.find("root_url");
+    if (iter != config.end())
+        FE_ROOT = iter->second;
+
+    iter = config.find("api_base_url");
+    if (iter != config.end())
+        FE_API_ROOT = iter->second;
+}
+
+FireEagleConfig::FireEagleConfig(const map<string,string> &config)
+    : app_token("",""), general_token("","") {
+    common_init();
+    common_init_with_config(config);
+
+    if (!app_token.is_valid()) {
+        string msg("FireEagleConfig: Could not initialize application token from config");
+        throw new FireEagleException(msg, FE_INTERNAL_ERROR);
+    }
+}
+
+FireEagleConfig::FireEagleConfig(const string &conf_file)
+    : app_token("",""), general_token("","") {
+    common_init();
+
+    map<string,string> pairs = FireEagleConfig::parse_config(conf_file);
+    common_init_with_config(pairs);
 
     if (!app_token.is_valid()) {
         string msg("FireEagleConfig: Could not initialize application token from config file ");
@@ -217,6 +265,13 @@ static void write_config(FILE *fp, const string &name, const string &value) {
 }
 
 void FireEagleConfig::save(const string &file) const {
+    map<string,string> dummy;
+    dummy.clear();
+    savex(file, dummy);
+}
+
+void FireEagleConfig::savex(const string &file,
+                            const map<string,string> &extra) const {
     if (!app_token.is_valid()) {
         string msg("FireEagleConfig: Cannot save an invalid config.");
         throw new FireEagleException(msg, FE_INTERNAL_ERROR);
@@ -234,6 +289,17 @@ void FireEagleConfig::save(const string &file) const {
     write_config(fp, "api_base_url", FE_API_ROOT);
     if (general_token.is_valid())
         write_config(fp, "general_token_data", general_token.to_string());
+
+    map<string,string>::const_iterator iter;
+    for (iter = extra.begin() ; iter != extra.end() ; iter++) {
+        if ((iter->first == "app_token_data")
+            || (iter->first == "root_url")
+            || (iter->first == "api_base_url")
+            || ((iter->first == "general_token_data")
+                && general_token.is_valid()))
+            continue;
+        write_config(fp, iter->first, iter->second);
+    }
     fclose(fp);
 }
 
@@ -429,7 +495,8 @@ string FireEagle::http(const string &url, const string postData) const {
 }
 
 // Format and sign an OAuth / API request
-string FireEagle::oAuthRequest(const string &url, const FE_ParamPairs &args, bool isPost) const {
+string FireEagle::oAuthRequest(const string &url, enum FE_oauth_token token_type,
+                               const FE_ParamPairs &args, bool isPost) const {
     string url_with_params(url);
 
     if (args.empty())
@@ -449,11 +516,43 @@ string FireEagle::oAuthRequest(const string &url, const FE_ParamPairs &args, boo
 
     char *postargs = NULL;
     const OAuthTokenPair *consumer = config->get_consumer_key();
+
+    OAuthTokenPair *token2 = NULL;
+    switch (token_type) {
+    case FE_TOKEN_GENERAL:
+        if (config->get_general_token()) {
+            token2 = new OAuthTokenPair(*(config->get_general_token()));
+            if (!token2)
+                throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
+        } else {
+            ostringstream os;
+            os << "Call to " << url << " requires a general token";
+            throw new FireEagleException(url, FE_INTERNAL_ERROR);
+        }
+        break;
+    case FE_TOKEN_REQUEST:
+    case FE_TOKEN_ACCESS:
+        token2 = token;
+        if (!token2) {
+            ostringstream os;
+            os << "Call to " << url << " requires a ";
+            if (token_type == FE_TOKEN_ACCESS)
+                os << "access token";
+            else
+                os << "request token";
+            throw new FireEagleException(url, FE_INTERNAL_ERROR);
+        }
+    default:
+        break;
+    }
+
     char *result_tmp = oauth_sign_url(url_with_params.c_str(),
                                       (isPost) ? &postargs : NULL, OA_HMAC,
                                       consumer->token.c_str(), consumer->secret.c_str(),
-                                      (token)? token->token.c_str() : NULL,
-                                      (token)? token->secret.c_str() : NULL);
+                                      (token2)? token2->token.c_str() : NULL,
+                                      (token2)? token2->secret.c_str() : NULL);
+    if (token_type == FE_TOKEN_GENERAL)
+        delete token2;
 
     if (config->FE_DUMP_REQUESTS) {
         ostringstream os;
@@ -494,14 +593,7 @@ string FireEagle::accessTokenURL() const {
 string FireEagle::methodURL(const string &method, enum FE_format format) const {
     string url(config->FE_API_ROOT);
     url.append("/api/0.1/").append(method);
-    switch (format) {
-    case FE_FORMAT_XML:
-        url.append(".xml");
-        break;
-    case FE_FORMAT_JSON:
-        url.append(".json");
-        break;
-    }
+    url.append(".").append((FE_format_info[format]).extension);
     return url;
 }
 
@@ -522,12 +614,6 @@ FireEagle::FireEagle(FireEagleConfig *_config) {
         throw new FireEagleException("NULL pointer for FireEagleConfig", FE_INTERNAL_ERROR);
     config = _config;
     token = NULL;
-    if (config->get_general_token()) {
-        //There exists a general token. Use that as the oauth token...
-        token = new OAuthTokenPair(*(config->get_general_token()));
-        if (!token)
-            throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
-    }
 }
 
 FireEagle::~FireEagle() {
@@ -595,7 +681,7 @@ OAuthTokenPair FireEagle::oAuthParseResponse(const string &response) const {
 }
 
 OAuthTokenPair FireEagle::getRequestToken() {
-    string response = oAuthRequest(requestTokenURL());
+    string response = oAuthRequest(requestTokenURL(), FE_TOKEN_NONE);
     OAuthTokenPair oauth = oAuthParseResponse(response);
 
     if (oauth.token.length() && oauth.secret.length()) {
@@ -634,7 +720,7 @@ void FireEagle::requireToken() const {
 
 OAuthTokenPair FireEagle::getAccessToken() {
     requireToken();
-    string response = oAuthRequest(accessTokenURL());
+    string response = oAuthRequest(accessTokenURL(), FE_TOKEN_REQUEST);
     OAuthTokenPair oauth = oAuthParseResponse(response);
 
     if (oauth.token.length() && oauth.secret.length()) {
@@ -650,39 +736,49 @@ OAuthTokenPair FireEagle::getAccessToken() {
 
 OAuthTokenPair FireEagle::access_token() { return getAccessToken(); }
 
-string FireEagle::call(const string &method, const FE_ParamPairs &args,
-                      bool isPost, enum FE_format format) const {
+string FireEagle::call(const string &method, enum FE_oauth_token token_type,
+                       const FE_ParamPairs &args, bool isPost,
+                       enum FE_format format) const {
     requireToken();
-    return oAuthRequest(methodURL(method, format), args, isPost);
+    return oAuthRequest(methodURL(method, format), token_type, args, isPost);
 }
 
 string FireEagle::user(enum FE_format format) const {
-    return call("user", empty_params, false, format);
+    return call("user", FE_TOKEN_ACCESS, empty_params, false, format);
 }
 
 string FireEagle::update(const FE_ParamPairs &args, enum FE_format format) const {
     if (args.size() == 0)
         throw new FireEagleException("FireEagle::update() needs a location",
                                      FE_LOCATION_REQUIRED);
-    return call("update", args, true, format);
+    return call("update", FE_TOKEN_ACCESS, args, true, format);
 }
 
 string FireEagle::lookup(const FE_ParamPairs &args, enum FE_format format) const {
     if (args.size() == 0)
         throw new FireEagleException("FireEagle::lookup() needs a location",
                                      FE_LOCATION_REQUIRED);
-    return call("lookup", args, false, format);
+    return call("lookup", FE_TOKEN_ACCESS, args, false, format);
 }
 
 string FireEagle::within(const FE_ParamPairs &args, enum FE_format format) const {
     if (args.size() == 0)
         throw new FireEagleException("FireEagle::within() needs a location",
                                      FE_LOCATION_REQUIRED);
-    return call("within", args, false, format);
+    return call("within", FE_TOKEN_GENERAL, args, false, format);
 }
 
 string FireEagle::recent(const FE_ParamPairs &args, enum FE_format format) const {
     //You can call without any args...
-    return call("recent", args, false, format);
+    return call("recent", FE_TOKEN_GENERAL, args, false, format);
 }
+
+static FE_format_info_t format_info[] = {
+    { "xml" },
+    { "json" },
+    { "html" }
+};
+
+const FE_format_info_t *FE_format_info = &(format_info[0]);
+const int FE_n_formats = sizeof(format_info)/sizeof(FE_format_info_t);
 
