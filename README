@@ -46,6 +46,7 @@ Run 'sudo make install'. This should make the files appear in /usr/local/include
 CHANGE LOGS:
 This section is for major changes visible to the users...
 
-1. Added support for OAuth 1.0 Rev A as per the draft http://oauth.googlecode.com/svn/spec/core/1.0a/drafts/1/oauth-core-1_0a.html
+Version 1.1.0:
+- Added support for OAuth 1.0 Rev A as per the draft http://oauth.googlecode.com/svn/spec/core/1.0a/drafts/1/oauth-core-1_0a.html
 
 Have fun.
