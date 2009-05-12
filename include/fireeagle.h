@@ -209,6 +209,8 @@ class ParserData {
     virtual FE_Parser *parser_instance() const = 0;
 };
 
+enum FE_oauth_version { OAUTH_10 = 0, OAUTH_10A };
+
 /**
  * A class for storing the FireEagle common stuff that applies across the
  * application. Normally we would expect this to be a singleton, but I am
@@ -250,6 +252,9 @@ class FireEagleConfig {
 
     /** Set to true to turn on dumping of requests and responses to cerr */
     bool FE_DUMP_REQUESTS;
+
+    /** Set the correct enum for OAuth version to be used */
+    enum FE_oauth_version FE_OAUTH_VERSION;
 
     /** Constructs an instance without a general_token */
     FireEagleConfig(const OAuthTokenPair &_app_token);
@@ -428,24 +433,29 @@ class FireEagle {
 
     /** Query Fire Eagle to extract a request token. Updates 'this' internally with
      * the request token received.
+     * @param oauth_callback Required with version 1.0 Rev A. If the
+     * FireEagleConfig used has FE_OAUTH_VERSION not set to default OAUTH_10,
+     * then this string will be the actual OAuth callback to be called on
+     * authorization. If nothing is passed, the default is 'oob'
      * @return OAuthTokenPair representing the request token received. In case of
      * error, returns a instance with zero-length string for token.
      */
-    OAuthTokenPair getRequestToken();
+    OAuthTokenPair getRequestToken(string oauth_callback = "oob");
 
     /** Aliased to getRequestToken */
-    OAuthTokenPair request_token();
+    OAuthTokenPair request_token(string oauth_callback = "oob");
 
     /** Query Fire Eagle to extract a access token based on the Request token which
      * is currently set in 'this'. Updates 'this' internally to use the access token
      * received.
      * @return OAuthTokenPair representing the access token received. In case of
+     * @param oauth_verifier Needed if Rev A of oauth 1.0 is being followed.
      * error, returns a instance with zero-length string for token.
      */
-    OAuthTokenPair getAccessToken();
+    OAuthTokenPair getAccessToken(string oauth_verifier = "");
 
     /** Aliased to getAccessToken. */
-    OAuthTokenPair access_token();
+    OAuthTokenPair access_token(string oauth_verifier = "");
 
     /** The 'user' API call. Uses the token in 'this' as the access token.
      * See http://fireeagle.yahoo.net/developer/explorer for more details on
@@ -502,12 +512,17 @@ class FireEagle {
      * to access the location.
      * @param oauth OAuthTokenPair representing the request token from Fire Eagle.
      * see FireEagle::getRequestToken for getting the request token.
+     * @param callback Pass a callback URL along with the authorize URL, so 
+     * that Fire Eagle will call back the app. Deprecated with rev A of OAuth
+     * 1.0
      * @return URL to which the user should be redirected (complete with GET parameters).
      */
-    string getAuthorizeURL(const OAuthTokenPair &oauth) const;
+    string getAuthorizeURL(const OAuthTokenPair &oauth,
+                           const string &callback = "") const;
 
     /** Aliased to getAuthorizeURL. */
-    string authorize(const OAuthTokenPair &oauth) const;
+    string authorize(const OAuthTokenPair &oauth,
+                     const string &callback = "") const;
 
     //Constructors, destructors and paraphanelia
     /**

@@ -97,10 +97,11 @@ void usage() {
     cout << "\t--save-fe-config <file> Save the Fire Eagle config to a file" << endl;
     cout << "\t--fe-config <file> Load Fire Eagle config from a file. This avoids --app-token-file, --general-token, --fe-root" << endl;
     cout << "\t--fake-request Do not make actual request. Dump the possible request to stout." << endl;
+    cout << "\t--oauth-version [1.0|1.0a] Defaults to 1.0." << endl;
     cout << "\nOAuth Commands: (use --token or --token-file where tokens are needed)" << endl;
-    cout << "\t--get_request_tok" << endl;
-    cout << "\t--get_authorize_url You can optionally specify a request token." << endl;
-    cout << "\t--get_access_token Needs a request token." << endl;
+    cout << "\t--get_request_tok [oauth_callback=<value>] oauth_callback is used only with --oauth-version 1.0a. It has no effect in original 1.0 protocol. If not specified, the default oob value is taken for 1.0a" << endl;
+    cout << "\t--get_authorize_url [oauth_callback=<value>] You can optionally specify a request token. Based on the --oauth-version used, the oauth_callback may be sent with the authorize URL (version 1.0) or sent when retrieving a request token when not specified (version 1.0a)" << endl;
+    cout << "\t--get_access_token [oauth_verifier=<value>] Needs a request token. Needs a verifier if --oauth-version is 1.0a." << endl;
     cout << "\nAPI commands: Always mention the access token throug --token or --token-file." << endl;
     cout << "\t--get_location Needs an access token" << endl;
     cout << "\t--lookup Needs an access token <name>=<value> [<name>=<value>,[...]]" << endl;
@@ -109,8 +110,10 @@ void usage() {
     cout << "\t--recent Needs a general token <name>=<value> [<name>=<value>,[...]]" << endl;
 }
 
-OAuthTokenPair request_token(FireEagle &fe) {
-    OAuthTokenPair reqTok = fe.request_token();
+OAuthTokenPair request_token(FireEagle &fe, const FE_ParamPairs &args) {
+    FE_ParamPairs::const_iterator iter = args.find("oauth_callback");
+    OAuthTokenPair reqTok = (iter == args.end()) ? fe.request_token()
+                                               : fe.request_token(iter->second);
 
     cout << "Request Token: " << reqTok.token << endl;
     cout << "Request Secret: " << reqTok.secret << endl;
@@ -118,15 +121,18 @@ OAuthTokenPair request_token(FireEagle &fe) {
     return reqTok;
 }
 
-string authorize_url(FireEagle &fe, OAuthTokenPair &request) {
-    string url = fe.getAuthorizeURL(request);
+string authorize_url(FireEagle &fe, OAuthTokenPair &request,
+                     const FE_ParamPairs &args) {
+    FE_ParamPairs::const_iterator iter = args.find("oauth_callback");
+    string url = (iter == args.end()) ? fe.getAuthorizeURL(request)
+                                    : fe.getAuthorizeURL(request, iter->second);
 
     cout << "Authorize URL: " << url << endl;
     return url;
 }
 
-OAuthTokenPair access_token(FireEagle &fe) {
-    OAuthTokenPair accessTok = fe.access_token();
+OAuthTokenPair access_token(FireEagle &fe, string verifier) {
+    OAuthTokenPair accessTok = fe.access_token(verifier);
 
     cout << "Access Token: " << accessTok.token << endl;
     cout << "Access Secret: " << accessTok.secret << endl;
@@ -247,6 +253,7 @@ int main(int argc, char *argv[]) {
     string token_str;
     string secret_str;
     enum FE_format format = FE_FORMAT_XML;
+    enum FE_oauth_version oauth_version = OAUTH_10;
     bool do_debug = false;
     string base_url;
     int i = 1;
@@ -259,6 +266,20 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--fake-request") == 0) {
             make_request = false;
             i++;
+        } else if (strcmp(argv[i], "--oauth-version") == 0) {
+            if (i == (argc - 1)) {
+                cerr << "Option --fe-config must be followed by a filename." << endl;
+                return 0;
+            }
+            if (strcmp(argv[i + 1], "1.0") == 0) {
+                oauth_version = OAUTH_10;
+            } else if (strcmp(argv[i + 1], "1.0a") == 0) {
+                oauth_version = OAUTH_10A;
+            } else {
+                cerr << "Invalid value " << argv[i + 1] << " for --oauth-version" << endl;
+                return 0;
+            }
+            i += 2;
         } else if (strcmp(argv[i], "--fe-config") == 0) {
             if (i == (argc - 1)) {
                 cerr << "Option --fe-config must be followed by a filename." << endl;
@@ -369,6 +390,7 @@ int main(int argc, char *argv[]) {
     assert(fe_config);
     fe_config->FE_DEBUG = do_debug;
     fe_config->FE_DUMP_REQUESTS = do_debug;
+    fe_config->FE_OAUTH_VERSION = oauth_version;
     if (base_url.length() > 0) {
         fe_config->FE_ROOT = base_url;
         fe_config->FE_API_ROOT = base_url;
@@ -390,11 +412,14 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    //Have a common place where all the args for the command can be extracted.
+    FE_ParamPairs args = get_args(idx, argc, argv);
+
     try {
         if (strcmp(argv[idx], "--get_request_tok") == 0) {
             MyFireEagle fe(fe_config);
             fe.dummy_request = !make_request;
-            OAuthTokenPair tok = request_token(fe);
+            OAuthTokenPair tok = request_token(fe, args);
             if (save_file.length() > 0)
                 tok.save(save_file);
         } else if (strcmp(argv[idx], "--get_authorize_url") == 0) {
@@ -402,19 +427,28 @@ int main(int argc, char *argv[]) {
             fe.dummy_request = !make_request;
             if (oauth_tok.token.length() == 0) {
                 cout << "Generating request .... " << endl;
-                oauth_tok = request_token(fe);
+                oauth_tok = request_token(fe, args);
                 if (save_file.length() > 0)
                     oauth_tok.save(save_file);
             }
-            authorize_url(fe, oauth_tok);
+            authorize_url(fe, oauth_tok, args);
         } else if (strcmp(argv[idx], "--get_access_token") == 0) {
             if (!oauth_tok.is_valid()) {
                 cout << "You must provide the request token and secret. Run with --get_authorize_url to generate the tokens and to access the generated URL before this step" << endl;
                 return 0;
             }
+            string verifier;
+            if (oauth_version == OAUTH_10A) {
+                FE_ParamPairs::iterator iter = args.find("oauth_verifier");
+                if (iter == args.end()) {
+                    cout << "oauth_verifier is needed for oauth version = 1.0a" << endl;
+                    return 0;
+                }
+                verifier = iter->second;
+            }
             MyFireEagle fe(fe_config, oauth_tok);
             fe.dummy_request = !make_request;
-            OAuthTokenPair access = access_token(fe);
+            OAuthTokenPair access = access_token(fe, verifier);
             if (save_file.length() > 0)
                 access.save(save_file);
         } else if (strcmp(argv[idx], "--get_location") == 0) {
@@ -433,7 +467,6 @@ int main(int argc, char *argv[]) {
             MyFireEagle fe(fe_config, oauth_tok);
             fe.dummy_request = !make_request;
 
-            FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
                 cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
@@ -447,7 +480,6 @@ int main(int argc, char *argv[]) {
             MyFireEagle fe(fe_config, oauth_tok);
             fe.dummy_request = !make_request;
 
-            FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
                 cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
@@ -461,7 +493,6 @@ int main(int argc, char *argv[]) {
             MyFireEagle fe(fe_config);
             fe.dummy_request = !make_request;
 
-            FE_ParamPairs args = get_args(idx, argc, argv);
             if (args.size() == 0) {
                 cerr << "Please provide some arguments in the <name>=<value> form" << endl;
                 return 0;
@@ -475,7 +506,6 @@ int main(int argc, char *argv[]) {
             MyFireEagle fe(fe_config);
             fe.dummy_request = !make_request;
 
-            FE_ParamPairs args = get_args(idx, argc, argv);
             recent(fe, args, format);
         } else {
             usage();

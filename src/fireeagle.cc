@@ -133,6 +133,7 @@ void FireEagleConfig::common_init() {
     this->FE_API_ROOT = "https://fireeagle.yahooapis.com";
     this->FE_DEBUG = false;
     this->FE_DUMP_REQUESTS = false;
+    this->FE_OAUTH_VERSION = OAUTH_10;
 }
 
 FireEagleConfig::FireEagleConfig(const OAuthTokenPair &_app_token)
@@ -593,7 +594,7 @@ string FireEagle::accessTokenURL() const {
 string FireEagle::methodURL(const string &method, enum FE_format format) const {
     string url(config->FE_API_ROOT);
     url.append("/api/0.1/").append(method);
-    url.append(".").append((FE_format_info[format]).extension);
+//    url.append(".").append((FE_format_info[format]).extension);
     return url;
 }
 
@@ -680,8 +681,14 @@ OAuthTokenPair FireEagle::oAuthParseResponse(const string &response) const {
     return oauth;
 }
 
-OAuthTokenPair FireEagle::getRequestToken() {
-    string response = oAuthRequest(requestTokenURL(), FE_TOKEN_NONE);
+OAuthTokenPair FireEagle::getRequestToken(string oauth_callback) {
+    FE_ParamPairs args;
+
+    if (config->FE_OAUTH_VERSION == OAUTH_10A) {
+        args["oauth_callback"] = oauth_callback;
+    }
+
+    string response = oAuthRequest(requestTokenURL(), FE_TOKEN_NONE, args);
     OAuthTokenPair oauth = oAuthParseResponse(response);
 
     if (oauth.token.length() && oauth.secret.length()) {
@@ -702,14 +709,25 @@ OAuthTokenPair FireEagle::getRequestToken() {
     return oauth;
 }
 
-OAuthTokenPair FireEagle::request_token() { return getRequestToken(); }
-
-string FireEagle::getAuthorizeURL(const OAuthTokenPair &oauth) const {
-    return authorizeURL() + "?oauth_token=" + oauth.token;
+OAuthTokenPair FireEagle::request_token(string oauth_callback) {
+    return getRequestToken(oauth_callback);
 }
 
-string FireEagle::authorize(const OAuthTokenPair &oauth) const {
-    return getAuthorizeURL(oauth);
+string FireEagle::getAuthorizeURL(const OAuthTokenPair &oauth,
+                                  const string &callback) const {
+    string url(authorizeURL() + "?oauth_token=" + oauth.token);
+    if ((callback.length() > 0) && (config->FE_OAUTH_VERSION == OAUTH_10)) {
+        char *tmp = oauth_url_escape(callback.c_str());
+        url.append("&oauth_callback=").append(tmp);
+        free(tmp);
+    }
+
+    return url;
+}
+
+string FireEagle::authorize(const OAuthTokenPair &oauth,
+                            const string &callback) const {
+    return getAuthorizeURL(oauth, callback);
 }
 
 void FireEagle::requireToken() const {
@@ -718,9 +736,13 @@ void FireEagle::requireToken() const {
                                      FE_TOKEN_REQUIRED);
 }
 
-OAuthTokenPair FireEagle::getAccessToken() {
+OAuthTokenPair FireEagle::getAccessToken(string oauth_verifier) {
     requireToken();
-    string response = oAuthRequest(accessTokenURL(), FE_TOKEN_REQUEST);
+    FE_ParamPairs args;
+    if (config->FE_OAUTH_VERSION == OAUTH_10A) {
+        args["oauth_verifier"] = oauth_verifier;
+    }
+    string response = oAuthRequest(accessTokenURL(), FE_TOKEN_REQUEST, args);
     OAuthTokenPair oauth = oAuthParseResponse(response);
 
     if (oauth.token.length() && oauth.secret.length()) {
@@ -734,7 +756,7 @@ OAuthTokenPair FireEagle::getAccessToken() {
     return oauth;
 }
 
-OAuthTokenPair FireEagle::access_token() { return getAccessToken(); }
+OAuthTokenPair FireEagle::access_token(string oauth_verifier) { return getAccessToken(oauth_verifier); }
 
 string FireEagle::call(const string &method, enum FE_oauth_token token_type,
                        const FE_ParamPairs &args, bool isPost,
