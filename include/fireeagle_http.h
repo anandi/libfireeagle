@@ -8,8 +8,10 @@
 #ifndef FIREEAGLE_HTTP_H
 #define FIREEAGLE_HTTP_H
 
-#include <string>
 #include <curl/curl.h>
+
+#include <string>
+#include <list>
 
 using namespace std;
 
@@ -47,6 +49,11 @@ class FireEagleHTTPAgent {
      * be URL encoded.
      */
     string postdata;
+
+   /**
+    * Set HTTP headers as required.
+    */
+   list<string> request_headers;
 
   public:
     /**
@@ -102,6 +109,13 @@ class FireEagleHTTPAgent {
      * @return Header (minus the header name) when exists. Empty string o/w.
      */
     virtual string get_header(const string &header) = 0;
+
+    /**
+     * Method to set a header for the requests.
+     * @param header Name of the header.
+     * @param value Header content.
+     */
+    void add_header(const string &header);
 
     /**
      * Clean up the HTTP agent created through initialize_agent. Must be able

@@ -53,6 +53,11 @@ class HTTPRequestPrinter : public FireEagleHTTPAgent {
 
     void initialize_agent() {}
     int make_call() {
+        list<string>::iterator iter;
+        for (iter = request_headers.begin() ; iter != request_headers.end() ;
+             iter++) {
+            cout << "[Header]" << *iter << endl;
+        }
         cout << "Request URL: " << url << endl;
         if (postdata.length() > 0)
             cout << "Post Body: " << postdata << endl;
@@ -98,6 +103,7 @@ void usage() {
     cout << "\t--fe-config <file> Load Fire Eagle config from a file. This avoids --app-token-file, --general-token, --fe-root" << endl;
     cout << "\t--fake-request Do not make actual request. Dump the possible request to stout." << endl;
     cout << "\t--oauth-version [1.0|1.0a] Defaults to 1.0." << endl;
+    cout << "\t--oauth-header Send OAuth params through header when possible." << endl;
     cout << "\nOAuth Commands: (use --token or --token-file where tokens are needed)" << endl;
     cout << "\t--get_request_tok [oauth_callback=<value>] oauth_callback is used only with --oauth-version 1.0a. It has no effect in original 1.0 protocol. If not specified, the default oob value is taken for 1.0a" << endl;
     cout << "\t--get_authorize_url [oauth_callback=<value>] You can optionally specify a request token. Based on the --oauth-version used, the oauth_callback may be sent with the authorize URL (version 1.0) or sent when retrieving a request token when not specified (version 1.0a)" << endl;
@@ -259,12 +265,16 @@ int main(int argc, char *argv[]) {
     int i = 1;
     int idx = -1; //Command.
     bool make_request = true;
+    bool oauth_header = false;
     while (i < argc) {
         if (strcmp(argv[i], "--help") == 0) {
             usage();
             return 0;
         } else if (strcmp(argv[i], "--fake-request") == 0) {
             make_request = false;
+            i++;
+        } else if (strcmp(argv[i], "--oauth-header") == 0) {
+            oauth_header = true;
             i++;
         } else if (strcmp(argv[i], "--oauth-version") == 0) {
             if (i == (argc - 1)) {
@@ -391,6 +401,7 @@ int main(int argc, char *argv[]) {
     fe_config->FE_DEBUG = do_debug;
     fe_config->FE_DUMP_REQUESTS = do_debug;
     fe_config->FE_OAUTH_VERSION = oauth_version;
+    fe_config->FE_USE_OAUTH_HEADER = oauth_header;
     if (base_url.length() > 0) {
         fe_config->FE_ROOT = base_url;
         fe_config->FE_API_ROOT = base_url;

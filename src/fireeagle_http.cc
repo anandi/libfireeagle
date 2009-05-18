@@ -41,6 +41,10 @@ void FireEagleHTTPAgent::set_custom_request_opts() {}
 
 int FireEagleHTTPAgent::agent_error() { return 0; } //All agents may not implement errors.
 
+void FireEagleHTTPAgent::add_header(const string &header) {
+    request_headers.push_back(header);
+}
+
 FireEagleCurl::FireEagleCurl(const string &_url,
                              const string &_postdata)
     : FireEagleHTTPAgent(_url, _postdata) {
@@ -81,8 +85,23 @@ void FireEagleCurl::initialize_agent() {
 }
 
 int FireEagleCurl::make_call() {
+    //Add on the headers if any.
+    struct curl_slist *slist = NULL;
+    list<string>::iterator iter;
+    for (iter = request_headers.begin() ; iter != request_headers.end() ;
+         iter++) {
+        slist = curl_slist_append(slist, (*iter).c_str());
+    }
+
+    if (slist)
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
+
     curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &(this->response_code));
+
+    if (slist)
+        curl_slist_free_all(slist);
+
     return (response_code > 99) ? response_code : 0;
 }
 

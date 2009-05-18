@@ -25,6 +25,7 @@ using namespace std;
 #define FE_CONNECT_FAILED 5 // totally failed to make an HTTP request
 #define FE_INTERNAL_ERROR 6 // totally failed to make an HTTP request
 #define FE_CONFIG_READ_ERROR 7 // can't find or parse fireeaglerc
+#define FE_OAUTH_VERSION_MISMATCH 8 // server is not talking the same version.
 
 #define FE_REMOTE_SUCCESS 0 // Request succeeded.
 #define FE_REMOTE_UPDATE_PROHIBITED 1 // Update not permitted for that user.
@@ -256,6 +257,11 @@ class FireEagleConfig {
     /** Set the correct enum for OAuth version to be used */
     enum FE_oauth_version FE_OAUTH_VERSION;
 
+    /** Use 'Authorization: Oauth' header for passing oauth_* params in GET
+     * request. Set to false by default.
+     */
+    bool FE_USE_OAUTH_HEADER;
+
     /** Constructs an instance without a general_token */
     FireEagleConfig(const OAuthTokenPair &_app_token);
 
@@ -334,6 +340,9 @@ class FireEagle {
   private:
     FireEagleConfig *config;
     OAuthTokenPair *token;
+    bool use_oauth_header; //If the config says FE_USE_OAUTH_HEADER = true, then
+                           //set this when oauth credentials have to be passed
+                           //through headers.
 
     /** Make an HTTP request, throwing an exception if we get anything
      * other than a 200 response. Request type (GET or POST) is decided by the
@@ -359,6 +368,17 @@ class FireEagle {
     string call(const string &method, enum FE_oauth_token token_type,
                 const FE_ParamPairs &args = empty_params, bool isPost = false,
                 enum FE_format format = FE_FORMAT_XML) const;
+
+    /** This function extracts all the OAuth-specific parameters from the URL
+     * encoded parameters and puts them in an 'Authorization:' header.
+     * @param url URL string with URL encoded params. The url is modified after
+     * extraction of oauth params.
+     * @param realm A security realm. Empty string by default. See
+     * http://oauth.net/core/1.0/#auth_header
+     * @return Header string or empty string.
+     */
+    string make_oauth_header(string &url, const string &realm = "") const;
+
   protected:
     /** This function is called with debug messages when FE_DEBUG is turned on.
      * Override to suit your own debug style. Default implementation outputs strings
@@ -373,7 +393,7 @@ class FireEagle {
      * @param response URL encoded response string containing OAuth token and secret.
      * @return Parsed object for token and secret.
      */
-    virtual OAuthTokenPair oAuthParseResponse(const string &response) const;
+    virtual FE_ParamPairs oAuthParseResponse(const string &response) const;
 
     /** Format and sign an OAuth / API request. Protected for testing.
      * @param url Complete URL with any GET query params. Params should be URL encoded.

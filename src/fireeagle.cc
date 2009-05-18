@@ -134,6 +134,7 @@ void FireEagleConfig::common_init() {
     this->FE_DEBUG = false;
     this->FE_DUMP_REQUESTS = false;
     this->FE_OAUTH_VERSION = OAUTH_10;
+    this->FE_USE_OAUTH_HEADER = false;
 }
 
 FireEagleConfig::FireEagleConfig(const OAuthTokenPair &_app_token)
@@ -409,13 +410,100 @@ FireEagleHTTPAgent *FireEagle::HTTPAgent(const string &url,
     return new FireEagleCurl(url, postdata);
 }
 
+//Utility function to extract a map from URL encoded params
+FE_ParamPairs parse_to_pairs(const string &str) {
+    FE_ParamPairs vals;
+    bool done = false;
+    size_t begin = (size_t)0;
+
+    while (!done) {
+        size_t end = str.find('&', begin);
+        if (end == string::npos) {
+            end = str.length();
+            done = true; //Do not loop more.
+        }
+        string pair = str.substr(begin, end - begin);
+        begin = end + 1;
+
+        size_t mid = pair.find('=');
+        if (mid == string::npos)
+            continue;
+
+        string name = pair.substr(0, mid);
+        string value = pair.substr(mid + 1);
+        vals[name] = value;
+    }
+
+    return vals;
+}
+
+string FireEagle::make_oauth_header(string &url, const string &realm) const {
+    size_t sep = url.find('?');
+
+    if (sep == string::npos)
+        return "";
+
+    string params(url.substr(sep + 1));
+    if (params.length() == 0)
+        return "";
+
+    FE_ParamPairs args = parse_to_pairs(params);
+    FE_ParamPairs oauth_args;
+
+    FE_ParamPairs::iterator iter1;
+    FE_ParamPairs::iterator iter = args.begin();
+    while (iter != args.end()) {
+        bool delete_entry = false;
+        if (iter->first.substr(0, 6) == "oauth_") {
+            oauth_args[iter->first] = iter->second;
+            iter1 = iter;
+            delete_entry = true;
+        }
+        iter++;
+        if (delete_entry)
+            args.erase(iter1);
+    }
+
+    if (oauth_args.size() == 0)
+        return "";
+
+    oauth_args["realm"] = realm;
+
+    url = url.substr(0, sep); //Take the prefix upto (and not including) the '?'
+    if (args.size() > 0) {
+        //We have more params.
+        url.append("?");
+        for (iter = args.begin() ; iter != args.end() ; iter++) {
+            if (iter != args.begin())
+                url.append("&");
+            url.append(iter->first).append("=").append(iter->second);
+        }
+    }
+
+    string header("Authorization: OAuth ");
+    for (iter = oauth_args.begin() ; iter != oauth_args.end() ; iter++) {
+        if (iter != oauth_args.begin())
+            header.append(",");
+        header.append(iter->first).append("=\"").append(iter->second).append("\"");
+    }
+
+    return header;
+}
+
 // Make an HTTP request, throwing an exception if we get anything other than a 200 response
 string FireEagle::http(const string &url, const string postData) const {
+    string header;
+    string url1 = url;
+    if (use_oauth_header && (postData.length() == 0))
+        header = make_oauth_header(url1); //url1 should get modified.
+
     if (config->FE_DEBUG)
-        cerr << "[FE HTTP request: url: " << url << ", post data: " << postData << endl;
+        cerr << "[FE HTTP request: url: " << url1 << ", post data: " << postData << endl;
     if (config->FE_DUMP_REQUESTS) {
         ostringstream os;
         os << "[FE HTTP request: url: " << url << ", post data: " << postData;
+        if (header.length() > 0)
+          os << ", header: " << header;
         dump(os.str());
     }
 
@@ -425,14 +513,16 @@ string FireEagle::http(const string &url, const string postData) const {
     long responseCode;
 
     try {
-        FireEagleHTTPAgent *agent = HTTPAgent(url, postData);
+        FireEagleHTTPAgent *agent = HTTPAgent(url1, postData);
         agent->initialize_agent();
+        if (header.length() > 0)
+            agent->add_header(header);
         agent->set_custom_request_opts();
         responseCode = agent->make_call();
         if (!responseCode) {
             responseCode = agent->agent_error();
             ostringstream os;
-            os << "Connection to " << url << " failed with agent error "<< responseCode;
+            os << "Connection to " << url1 << " failed with agent error "<< responseCode;
             throw new FireEagleException(os.str(), FE_CONNECT_FAILED);
         }
 
@@ -474,7 +564,7 @@ string FireEagle::http(const string &url, const string postData) const {
             delete parser;
         } else {
             ostringstream os;
-            os << "Request to " << url << " failed: HTTP error " << responseCode;
+            os << "Request to " << url1 << " failed: HTTP error " << responseCode;
             os << " Content Type: " << contentType;
             throw new FireEagleException(os.str(), FE_REQUEST_FAILED, response);
         }
@@ -608,6 +698,7 @@ FireEagle::FireEagle(FireEagleConfig *_config, const OAuthTokenPair &_token) {
     token = new OAuthTokenPair(_token);
     if (!token)
         throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
+    use_oauth_header = false;
 }
 
 FireEagle::FireEagle(FireEagleConfig *_config) {
@@ -615,6 +706,7 @@ FireEagle::FireEagle(FireEagleConfig *_config) {
         throw new FireEagleException("NULL pointer for FireEagleConfig", FE_INTERNAL_ERROR);
     config = _config;
     token = NULL;
+    use_oauth_header = false;
 }
 
 FireEagle::~FireEagle() {
@@ -630,6 +722,7 @@ FireEagle::FireEagle(const FireEagle &other) {
             throw new FireEagleException("Out of memory", FE_INTERNAL_ERROR);
     } else
         token = NULL;
+    use_oauth_header = false;
 }
 
 FireEagle &FireEagle::operator=(const FireEagle &other) {
@@ -650,35 +743,8 @@ void FireEagle::dump(const string &str) const {
 }
 
 // Parse a URL-encoded OAuth response
-OAuthTokenPair FireEagle::oAuthParseResponse(const string &response) const {
-    size_t begin = (size_t)0;
-    OAuthTokenPair oauth("", "");
-
-    bool done = false;
-    while (!done) {
-        size_t end = response.find('&', begin);
-        if (end == string::npos) {
-            end = response.length();
-            done = true; //Do not loop more.
-        }
-        string pair = response.substr(begin, end - begin);
-        begin = end + 1;
-
-        size_t mid = pair.find('=');
-        if (mid == string::npos)
-            continue;
-
-        string name = pair.substr(0, mid);
-        string value = pair.substr(mid + 1);
-
-        if (name == "oauth_token") {
-            oauth.token = value;
-        } else if (name == "oauth_token_secret") {
-            oauth.secret = value;
-        }
-    }
-
-    return oauth;
+FE_ParamPairs FireEagle::oAuthParseResponse(const string &response) const {
+    return parse_to_pairs(response);
 }
 
 OAuthTokenPair FireEagle::getRequestToken(string oauth_callback) {
@@ -688,8 +754,20 @@ OAuthTokenPair FireEagle::getRequestToken(string oauth_callback) {
         args["oauth_callback"] = oauth_callback;
     }
 
+    if (config->FE_USE_OAUTH_HEADER)
+        use_oauth_header = true;
+
     string response = oAuthRequest(requestTokenURL(), FE_TOKEN_NONE, args);
-    OAuthTokenPair oauth = oAuthParseResponse(response);
+    use_oauth_header = false;
+    FE_ParamPairs resp = oAuthParseResponse(response);
+    OAuthTokenPair oauth(resp["oauth_token"], resp["oauth_token_secret"]);
+
+    if (config->FE_OAUTH_VERSION == OAUTH_10A) {
+        if (resp["oauth_callback_confirmed"] != "true")
+//            throw new FireEagleException("Server response is not compatible with the oauth protocol version in use", FE_OAUTH_VERSION_MISMATCH);
+            //Make it dump to stderr for the time being...
+            dump("Server response is not compatible with the oauth protocol version in use");
+    }
 
     if (oauth.token.length() && oauth.secret.length()) {
         if (token)
@@ -742,8 +820,14 @@ OAuthTokenPair FireEagle::getAccessToken(string oauth_verifier) {
     if (config->FE_OAUTH_VERSION == OAUTH_10A) {
         args["oauth_verifier"] = oauth_verifier;
     }
+
+    if (config->FE_USE_OAUTH_HEADER)
+        use_oauth_header = true;
+
     string response = oAuthRequest(accessTokenURL(), FE_TOKEN_REQUEST, args);
-    OAuthTokenPair oauth = oAuthParseResponse(response);
+    use_oauth_header = false;
+    FE_ParamPairs resp = oAuthParseResponse(response);
+    OAuthTokenPair oauth(resp["oauth_token"], resp["oauth_token_secret"]);
 
     if (oauth.token.length() && oauth.secret.length()) {
         if (token)
@@ -756,7 +840,9 @@ OAuthTokenPair FireEagle::getAccessToken(string oauth_verifier) {
     return oauth;
 }
 
-OAuthTokenPair FireEagle::access_token(string oauth_verifier) { return getAccessToken(oauth_verifier); }
+OAuthTokenPair FireEagle::access_token(string oauth_verifier) {
+    return getAccessToken(oauth_verifier);
+}
 
 string FireEagle::call(const string &method, enum FE_oauth_token token_type,
                        const FE_ParamPairs &args, bool isPost,
