@@ -5,3 +5,4 @@
 5. Bug fixes, of course
 6. XMPP support
 7. Add mobile auth support.
+8. Remove old Oauth 1.0 support.
