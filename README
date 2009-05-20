@@ -48,5 +48,7 @@ This section is for major changes visible to the users...
 
 Version 1.1.0:
 - Added support for OAuth 1.0 Rev A as per the draft http://oauth.googlecode.com/svn/spec/core/1.0a/drafts/1/oauth-core-1_0a.html
+- Added support for passing OAuth parameters through 'Authorization' headers during
+  the request token and access token transactions.
 
 Have fun.
