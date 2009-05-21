@@ -3,7 +3,7 @@
 #
 # Copyright (C) 2009 Yahoo! Inc
 #
-LIBOAUTHDIR := $(HOME)/scratch/liboauth
+LIBOAUTHDIR := $(HOME)/gits/liboauth
 INCLUDE_DIRS := -I. -I../include -I$(LIBOAUTHDIR)/trunk/src
 SRC_CC := ./fireeagle.cc ./fire_objects.cc ./fireeagle_http.cc ./expat_parser.cc
 OBJS := $(SRC_CC:.cc=.o)

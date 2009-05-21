@@ -353,11 +353,6 @@ class FireEagle {
      */
     string http(const string &url, const string postData = "") const;
 
-    /** Check that a proper token is set for the operation being invoked.
-     * Throws exception if token is not present
-     */
-    void requireToken() const;
-
     /** Generic interface for API calls.
      * @param method Name of the method being called.
      * @param args list of key-value pairs to be passed as arguments to the API call.
@@ -451,13 +446,13 @@ class FireEagle {
      */
     string methodURL(const string &method, enum FE_format format = FE_FORMAT_XML) const;
 
-    /** Query Fire Eagle to extract a request token. Updates 'this' internally with
+    /** Query Fire Eagle to extract a request token. Updates 'this' internally
      * the request token received.
      * @param oauth_callback Required with version 1.0 Rev A. If the
      * FireEagleConfig used has FE_OAUTH_VERSION not set to default OAUTH_10,
      * then this string will be the actual OAuth callback to be called on
      * authorization. If nothing is passed, the default is 'oob'
-     * @return OAuthTokenPair representing the request token received. In case of
+     * @return OAuthTokenPair representing the request token received. In case 
      * error, returns a instance with zero-length string for token.
      */
     OAuthTokenPair getRequestToken(string oauth_callback = "oob");

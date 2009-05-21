@@ -684,7 +684,7 @@ string FireEagle::accessTokenURL() const {
 string FireEagle::methodURL(const string &method, enum FE_format format) const {
     string url(config->FE_API_ROOT);
     url.append("/api/0.1/").append(method);
-//    url.append(".").append((FE_format_info[format]).extension);
+    url.append(".").append((FE_format_info[format]).extension);
     return url;
 }
 
@@ -808,14 +808,7 @@ string FireEagle::authorize(const OAuthTokenPair &oauth,
     return getAuthorizeURL(oauth, callback);
 }
 
-void FireEagle::requireToken() const {
-    if (!token || !token->token.length() || !token->secret.length())
-        throw new FireEagleException("This function requires an OAuth token",
-                                     FE_TOKEN_REQUIRED);
-}
-
 OAuthTokenPair FireEagle::getAccessToken(string oauth_verifier) {
-    requireToken();
     FE_ParamPairs args;
     if (config->FE_OAUTH_VERSION == OAUTH_10A) {
         args["oauth_verifier"] = oauth_verifier;
@@ -847,7 +840,6 @@ OAuthTokenPair FireEagle::access_token(string oauth_verifier) {
 string FireEagle::call(const string &method, enum FE_oauth_token token_type,
                        const FE_ParamPairs &args, bool isPost,
                        enum FE_format format) const {
-    requireToken();
     return oAuthRequest(methodURL(method, format), token_type, args, isPost);
 }
 
