@@ -102,7 +102,7 @@ void usage() {
     cout << "\t--save-fe-config <file> Save the Fire Eagle config to a file" << endl;
     cout << "\t--fe-config <file> Load Fire Eagle config from a file. This avoids --app-token-file, --general-token, --fe-root" << endl;
     cout << "\t--fake-request Do not make actual request. Dump the possible request to stout." << endl;
-    cout << "\t--oauth-version [1.0|1.0a] Defaults to 1.0." << endl;
+    cout << "\t--oauth-version [1.0|1.0a] Defaults to 1.0a." << endl;
     cout << "\t--oauth-header Send OAuth params through header when possible." << endl;
     cout << "\nOAuth Commands: (use --token or --token-file where tokens are needed)" << endl;
     cout << "\t--get_request_tok [oauth_callback=<value>] oauth_callback is used only with --oauth-version 1.0a. It has no effect in original 1.0 protocol. If not specified, the default oob value is taken for 1.0a" << endl;
@@ -259,7 +259,7 @@ int main(int argc, char *argv[]) {
     string token_str;
     string secret_str;
     enum FE_format format = FE_FORMAT_XML;
-    enum FE_oauth_version oauth_version = OAUTH_10;
+    enum FE_oauth_version oauth_version = OAUTH_10A;
     bool do_debug = false;
     string base_url;
     int i = 1;

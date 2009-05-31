@@ -133,7 +133,7 @@ void FireEagleConfig::common_init() {
     this->FE_API_ROOT = "https://fireeagle.yahooapis.com";
     this->FE_DEBUG = false;
     this->FE_DUMP_REQUESTS = false;
-    this->FE_OAUTH_VERSION = OAUTH_10;
+    this->FE_OAUTH_VERSION = OAUTH_10A;
     this->FE_USE_OAUTH_HEADER = false;
 }
 
@@ -764,9 +764,7 @@ OAuthTokenPair FireEagle::getRequestToken(string oauth_callback) {
 
     if (config->FE_OAUTH_VERSION == OAUTH_10A) {
         if (resp["oauth_callback_confirmed"] != "true")
-//            throw new FireEagleException("Server response is not compatible with the oauth protocol version in use", FE_OAUTH_VERSION_MISMATCH);
-            //Make it dump to stderr for the time being...
-            dump("Server response is not compatible with the oauth protocol version in use");
+            throw new FireEagleException("Server response is not compatible with the oauth protocol version in use", FE_OAUTH_VERSION_MISMATCH);
     }
 
     if (oauth.token.length() && oauth.secret.length()) {
