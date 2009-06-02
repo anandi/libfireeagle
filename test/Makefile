@@ -3,9 +3,9 @@
 #
 # Copyright (C) 2009 Yahoo! Inc
 #
-LIBOAUTHDIR := $(HOME)/scratch/liboauth
+LIBOAUTHDIR := /usr/local
 INCLUDE_DIRS := -I. -I../include
-LIBDIRS := -L../src -L$(LIBOAUTHDIR)/trunk/src
+LIBDIRS := -L../src -L$(LIBOAUTHDIR)/lib
 LIBS := -loauth -lfireeagle -lcurl -lexpat
 SRC_CC := ./deskapp.cc
 OBJS := $(SRC_CC:.cc=.o)

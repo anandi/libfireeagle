@@ -52,4 +52,8 @@ Version 1.1.0:
 - Set the default protocol to Oauth 1.0 Rev A.
 - Known bug: Passing OAuth callback through oauth_callback with URL parameters do not work. The callback is not registered with the params.
 
+Version 1.2.0
+- Changed dependency on liboauth. This version works only with liboauth version 0.5.1
+- Fixed bug for passing OAuth callback through oauth_callback with URL parameters.
+
 Have fun.

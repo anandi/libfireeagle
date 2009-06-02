@@ -3,15 +3,15 @@
 #
 # Copyright (C) 2009 Yahoo! Inc
 #
-LIBOAUTHDIR := $(HOME)/gits/liboauth
-INCLUDE_DIRS := -I. -I../include -I$(LIBOAUTHDIR)/trunk/src
+LIBOAUTHDIR := /usr/local
+INCLUDE_DIRS := -I. -I../include -I$(LIBOAUTHDIR)/include
 SRC_CC := ./fireeagle.cc ./fire_objects.cc ./fireeagle_http.cc ./expat_parser.cc
 OBJS := $(SRC_CC:.cc=.o)
 DEPS := $(SRC_CC:.cc=.d)
 CPP := g++
 CPPFLAGS := -fPIC -g -c $(INCLUDE_DIRS)
 LD := g++
-LDFLAGS := -fPIC -shared -L$(LIBOAUTHDIR)/trunk/src
+LDFLAGS := -fPIC -shared -L$(LIBOAUTHDIR)/lib
 RM := rm -f
 
 VERSION_MAJOR=$(shell grep MAJOR ../VERSION | cut -f 2 -d '=')
@@ -39,7 +39,7 @@ $(TARGET): $(OBJS)
 
 $(LINKS): $(TARGET)
 	for item in $@; do \
-	    ln -s $< $$item; \
+	    rm -f $$item && ln -s $< $$item; \
 	done
 
 include $(DEPS)
@@ -50,5 +50,5 @@ clean:
 install: $(TARGET)
 	cp -r $(TARGET) $(INSTALL_BASE)/lib/
 	for item in $(LINKS); do \
-	    ln -s $(INSTALL_BASE)/lib/$(TARGET) $(INSTALL_BASE)/lib/$$item; \
+	    rm -f $(INSTALL_BASE)/lib/$$item && ln -s $(INSTALL_BASE)/lib/$(TARGET) $(INSTALL_BASE)/lib/$$item; \
 	done

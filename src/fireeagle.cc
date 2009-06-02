@@ -588,21 +588,16 @@ string FireEagle::http(const string &url, const string postData) const {
 // Format and sign an OAuth / API request
 string FireEagle::oAuthRequest(const string &url, enum FE_oauth_token token_type,
                                const FE_ParamPairs &args, bool isPost) const {
-    string url_with_params(url);
-
     if (args.empty())
         isPost = false;
-    else {
-        url_with_params.append("?");
-        bool first_time = true;
-        for (FE_ParamPairs::const_iterator iter = args.begin() ;
-             iter != args.end() ; iter++) {
-            if (!first_time)
-                url_with_params.append("&");
-            else
-                first_time = false;
-            url_with_params.append(iter->first + "=" + iter->second);
-        }
+
+    char **argv = NULL;
+    int argc = oauth_split_url_parameters(url.c_str(), &argv);
+    for (FE_ParamPairs::const_iterator iter = args.begin() ;
+         iter != args.end() ; iter++) {
+        string nvpair; //Name-value pair
+        nvpair.append(iter->first).append("=").append(iter->second);
+        oauth_add_param_to_array(&argc, &argv, nvpair.c_str());
     }
 
     char *postargs = NULL;
@@ -637,11 +632,14 @@ string FireEagle::oAuthRequest(const string &url, enum FE_oauth_token token_type
         break;
     }
 
-    char *result_tmp = oauth_sign_url(url_with_params.c_str(),
-                                      (isPost) ? &postargs : NULL, OA_HMAC,
-                                      consumer->token.c_str(), consumer->secret.c_str(),
-                                      (token2)? token2->token.c_str() : NULL,
-                                      (token2)? token2->secret.c_str() : NULL);
+    char *result_tmp = oauth_sign_array(&argc, &argv,
+                                        (isPost) ? &postargs : NULL, OA_HMAC,
+                                        consumer->token.c_str(),
+                                        consumer->secret.c_str(),
+                                        (token2)? token2->token.c_str() : NULL,
+                                       (token2)? token2->secret.c_str() : NULL);
+    oauth_free_array(&argc, &argv);
+
     if (token_type == FE_TOKEN_GENERAL)
         delete token2;
 
