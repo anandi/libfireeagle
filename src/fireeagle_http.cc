@@ -63,7 +63,7 @@ curl_response_chunk_handler(void *ptr, size_t size, size_t nmemb, void *data) {
     size_t realsize = size * nmemb;
     string *sp = (string *)data;
 
-    sp->append((char *)ptr);
+    sp->append((char *)ptr, realsize);
 
     return realsize;
 }
